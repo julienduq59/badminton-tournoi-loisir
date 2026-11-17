@@ -13,7 +13,7 @@ Adresse du site : https://julienduq59.github.io/badminton-tournoi-loisir/
 - Appel automatique du match suivant dès qu'un terrain se libère, report d'un match en fin de liste.
 - Scores : les joueurs envoient le score de leur match depuis leur téléphone, un organisateur le valide, le corrige ou le refuse. Les organisateurs peuvent aussi saisir les scores eux-mêmes. Option pour valider tout seul quand les deux équipes envoient le même score.
 - Écran d'affichage pour la salle (télé ou vidéoprojecteur) : matchs en cours sur chaque terrain, prochain match, matchs suivants, QR code, puis podium et classement final.
-- Page des équipes, ouverte avec le QR code : prochain match et numéro du terrain, envoi du score, matchs joués avec les scores, matchs restants, classement.
+- Page des équipes, ouverte avec le QR code, en trois onglets. « Mon équipe » : match en cours dans la salle, prochain match et son numéro, terrain, envoi du score, matchs joués et restants. « Classement » : classement en direct (poules, phase finale, classement final). « Récap » : une image à télécharger ou partager avec le bilan de l'équipe (place, victoires, points, plus belle victoire, match le plus serré, temps de jeu…) et le tournoi en chiffres.
 - Plusieurs organisateurs : le lien organisateur (onglet QR code) permet de gérer le tournoi depuis un autre téléphone.
 - Classement au nombre de victoires. Entre deux équipes à égalité, leur match les départage, puis la différence de sets, puis la différence de points. Impression et téléchargement (Excel) du classement et de tous les matchs.
 - Pendant le tournoi : temps écoulé ou restant sur chaque terrain (durée maximum d'un match en option), heure de fin estimée, heure de passage estimée pour chaque équipe, match mis en priorité, forfait sur un match, abandon d'une équipe, filtre des matchs par équipe.
@@ -43,4 +43,5 @@ Les valeurs de configuration ne sont pas secrètes. La sécurité vient des règ
 - `assets/donnees.js` : stockage, dans le navigateur ou dans la base Firebase
 - `assets/config.js` : configuration de la base Firebase
 - `database.rules.json` : règles de sécurité de la base
+- `assets/recap.js` : dessin de l'image du récap (canvas 1080 × 1920)
 - `assets/vendor/qrcode.js` : génération des QR codes (bibliothèque qrcode-generator de Kazuhiko Arase, licence MIT)

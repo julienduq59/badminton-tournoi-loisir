@@ -47,6 +47,10 @@ commandes, commits et textes du site.
   crée ou corrige les matchs suivants à chaque résultat (un match pas terminé suit toujours le
   tableau). `classementFinal()` donne les places finales, `formatMatch()` le format propre à la
   phase finale. Un match de phase finale doit avoir un vainqueur.
+- Page des équipes : onglets « Mon équipe », « Classement » (en direct) et « Récap » (adresse
+  `#classement` / `#recap`). Le récap est une image dessinée sur canvas par `assets/recap.js`
+  (`BT.dessinerRecap(t, equipeId)`, récap du tournoi sans équipe) à partir de `statsEquipe`,
+  `statsTournoi` et `placeEquipe` (commun.js) ; elle n'est recréée que sur demande.
 - `t.pause` suspend l'appel automatique (`appelAutoActif`), `t.annonce` est le message affiché
   sur l'écran et les téléphones.
 - `assets/donnees.js` (`BT.Donnees`) cache le stockage : mode local (localStorage) quand

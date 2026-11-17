@@ -1093,6 +1093,98 @@
     if (appelAutoActif(t) && demarre(t)) remplirTerrains(t);
   }
 
+  /* ---------- Statistiques (récapitulatif) ---------- */
+
+  // Score d'un match vu par une équipe : [points pour, points contre] par set.
+  function setsPour(m, equipeId) {
+    return (m.sets || []).map(([x, y]) => (m.a === equipeId ? [x, y] : [y, x]));
+  }
+
+  function dureeMinutes(m) {
+    return m.debut && m.fin && m.fin > m.debut ? Math.round((m.fin - m.debut) / 60000) : null;
+  }
+
+  // Rang et parcours d'une équipe : classement final s'il existe, sinon classement de sa poule.
+  function placeEquipe(t, equipeId) {
+    const e = equipe(t, equipeId);
+    const fini = statut(t) === 'termine';
+    const final = fini ? classementFinal(t) : null;
+    if (final) {
+      const l = final.find((x) => x.equipe.id === equipeId);
+      return { rang: l ? l.rang : null, sur: t.equipes.length, definitif: true, etape: l ? l.etape : '' };
+    }
+    const poule = avecPoules(t) ? e.poule : null;
+    const lignes = classement(t, poule);
+    const l = lignes.find((x) => x.equipe.id === equipeId);
+    return { rang: l && l.J ? l.rang : null, sur: lignes.length, definitif: fini, etape: poule != null ? nomPoule(poule) : '' };
+  }
+
+  function statsEquipe(t, equipeId) {
+    const mes = t.matchs.filter((m) => m.statut === 'termine' && (m.a === equipeId || m.b === equipeId))
+      .sort((x, y) => (x.fin || 0) - (y.fin || 0));
+    const s = {
+      joues: mes.length, V: 0, D: 0, N: 0, setsP: 0, setsC: 0, ptsP: 0, ptsC: 0,
+      serie: 0, minutes: 0, parCategorie: {}, meilleureVictoire: null, plusSerre: null, plusLong: null,
+    };
+    let serie = 0;
+    mes.forEach((m) => {
+      const r = resultat(m);
+      const cote = m.a === equipeId ? 'a' : 'b';
+      const gagne = r.gagnant === cote;
+      const perdu = r.gagnant && !gagne;
+      const pour = cote === 'a' ? r.ptsA : r.ptsB;
+      const contre = cote === 'a' ? r.ptsB : r.ptsA;
+      s.ptsP += pour;
+      s.ptsC += contre;
+      s.setsP += cote === 'a' ? r.setsA : r.setsB;
+      s.setsC += cote === 'a' ? r.setsB : r.setsA;
+      if (gagne) s.V++; else if (perdu) s.D++; else s.N++;
+      serie = gagne ? serie + 1 : 0;
+      s.serie = Math.max(s.serie, serie);
+      const c = m.categorie || '';
+      s.parCategorie[c] = s.parCategorie[c] || { V: 0, D: 0, N: 0 };
+      s.parCategorie[c][gagne ? 'V' : perdu ? 'D' : 'N']++;
+      const duree = dureeMinutes(m);
+      if (duree) s.minutes += duree;
+      if (m.forfait) return;
+      const adversaire = m.a === equipeId ? m.b : m.a;
+      const fiche = { m, adversaire, score: setsPour(m, equipeId), ecart: pour - contre, duree };
+      if (gagne && (!s.meilleureVictoire || fiche.ecart > s.meilleureVictoire.ecart)) s.meilleureVictoire = fiche;
+      const serre = Math.abs(pour - contre);
+      if (!s.plusSerre || serre < Math.abs(s.plusSerre.ecart) || (serre === Math.abs(s.plusSerre.ecart) && pour + contre > s.plusSerre.total)) {
+        s.plusSerre = Object.assign({ total: pour + contre }, fiche);
+      }
+      if (duree && (!s.plusLong || duree > s.plusLong.duree)) s.plusLong = fiche;
+    });
+    s.moyenne = s.joues ? Math.round((s.ptsP / s.joues) * 10) / 10 : 0;
+    return s;
+  }
+
+  function statsTournoi(t) {
+    const joues = t.matchs.filter((m) => m.statut === 'termine' && !m.forfait);
+    const s = {
+      matchs: joues.length, total: t.matchs.length, points: 0, sets: 0,
+      plusGrandEcart: null, plusSerre: null, plusLong: null, debut: null, fin: null, champion: null,
+    };
+    joues.forEach((m) => {
+      const r = resultat(m);
+      s.points += r.ptsA + r.ptsB;
+      s.sets += (m.sets || []).length;
+      const ecart = Math.abs(r.ptsA - r.ptsB);
+      const fiche = { m, ecart, total: r.ptsA + r.ptsB, duree: dureeMinutes(m) };
+      if (r.gagnant && (!s.plusGrandEcart || ecart > s.plusGrandEcart.ecart)) s.plusGrandEcart = fiche;
+      if (!s.plusSerre || ecart < s.plusSerre.ecart || (ecart === s.plusSerre.ecart && fiche.total > s.plusSerre.total)) s.plusSerre = fiche;
+      if (fiche.duree && (!s.plusLong || fiche.duree > s.plusLong.duree)) s.plusLong = fiche;
+      if (m.debut) s.debut = s.debut ? Math.min(s.debut, m.debut) : m.debut;
+      if (m.fin) s.fin = s.fin ? Math.max(s.fin, m.fin) : m.fin;
+    });
+    if (statut(t) === 'termine') {
+      const final = classementFinal(t);
+      if (final && final[0]) s.champion = final[0].equipe;
+    }
+    return s;
+  }
+
   // Podium des trois premières places (ordre d'affichage 2, 1, 3).
   function podiumHtml(lignes) {
     const marche = (l, place) => l ? '<div class="marche marche--' + place + '">'
@@ -1255,6 +1347,7 @@
     nbQualifies, qualifies, phasePoulesFinie, lancerPhaseFinale, annulerPhaseFinale, avancerTableau,
     nbTours, nomTourIndex, matchTableau, participants, issue, tableauTermine, finaleAttendue,
     etiquetteMatch, formatMatch, classementPoules, classementFinal, tableauHtml,
+    setsPour, placeEquipe, statsEquipe, statsTournoi,
     classement, nulsPossibles, podiumHtml, signe,
     lireSaisie, memesSets, enTableau, normaliser,
     urlPage, qrSvg, heure, idDansAdresse, ICONE, activerSon, sonActif, bip,

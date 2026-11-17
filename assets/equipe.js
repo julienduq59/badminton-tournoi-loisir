@@ -46,6 +46,11 @@
     dernierAppel = actuel;
   }
 
+  // Vue affichée : l'équipe, le classement en direct ou le récap à télécharger.
+  const VUES = ['equipe', 'classement', 'recap'];
+  let vue = VUES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'equipe';
+  let recap = null; // { url, blob, nom } de la dernière image créée
+
   // Formulaire d'envoi du score (conservé quand la page se met à jour).
   let envoi = null; // { matchId, saisie: [[a, b], ...], confirmer, message }
 
@@ -344,7 +349,8 @@
     }
 
     if (t.matchs.length) {
-      h += '<h2>Classement' + (pouleMoi != null ? ', ' + BT.nomPoule(pouleMoi).toLowerCase() : '') + '</h2><div class="tableau-conteneur"><table class="tableau"><thead><tr>'
+      h += '<div class="titre-actions"><h2>Classement' + (pouleMoi != null ? ', ' + BT.nomPoule(pouleMoi).toLowerCase() : '') + '</h2>'
+        + '<button type="button" class="bouton petit" data-vue="classement">Tout le classement</button></div><div class="tableau-conteneur"><table class="tableau"><thead><tr>'
         + '<th>Rang</th><th class="equipe">Équipe</th><th><abbr title="Matchs joués">J</abbr></th><th><abbr title="Victoires">V</abbr></th>'
         + (nuls ? '<th><abbr title="Matchs nuls">N</abbr></th>' : '')
         + '<th><abbr title="Défaites">D</abbr></th><th>Sets</th></tr></thead><tbody>'
@@ -359,11 +365,141 @@
     contenu.innerHTML = h;
   }
 
-  function rendre() {
+  /* ---------- Classement en direct ---------- */
+
+  function tableClassement(lignes, qualifies) {
+    const nuls = BT.nulsPossibles(t);
+    return '<div class="tableau-conteneur"><table class="tableau"><thead><tr>'
+      + '<th>Rang</th><th class="equipe">Équipe</th><th><abbr title="Matchs joués">J</abbr></th><th><abbr title="Victoires">V</abbr></th>'
+      + (nuls ? '<th><abbr title="Matchs nuls">N</abbr></th>' : '')
+      + '<th><abbr title="Défaites">D</abbr></th><th><abbr title="Différence de points">Pts</abbr></th></tr></thead><tbody>'
+      + lignes.map((l, i) => '<tr class="' + (l.equipe.id === equipeId ? 'moi' : '') + (i < qualifies ? ' qualifie' : '') + '"><td class="rang">' + l.rang + '</td>'
+        + '<td class="equipe">' + esc(l.equipe.nom) + (i < qualifies ? ' <span class="etiquette etiquette--qualifie">Q</span>' : '') + '</td>'
+        + '<td>' + l.J + '</td><td class="fort">' + l.V + '</td>' + (nuls ? '<td>' + l.N + '</td>' : '') + '<td>' + l.D + '</td>'
+        + '<td>' + BT.signe(l.diffPts) + '</td></tr>').join('')
+      + '</tbody></table></div>';
+  }
+
+  function vueClassement() {
+    const st = BT.statut(t);
+    const r = t.reglages;
+    const final = st === 'termine' ? BT.classementFinal(t) : null;
+    let h = '<p class="en-direct"><span class="point-direct"></span>' + (st === 'termine' ? 'Classement final' : 'En direct, mis à jour à ' + BT.heure(t.maj)) + '</p>';
+    if (final) {
+      h += BT.podiumHtml(final) + '<div class="tableau-conteneur"><table class="tableau"><thead><tr><th>Rang</th><th class="equipe">Équipe</th>'
+        + '<th class="equipe">' + (t.finale ? 'Parcours' : 'Bilan') + '</th></tr></thead><tbody>'
+        + final.map((l) => '<tr' + (l.equipe.id === equipeId ? ' class="moi"' : '') + '><td class="rang">' + (l.rang || '') + '</td><td class="equipe">' + esc(l.equipe.nom) + '</td>'
+          + '<td class="equipe">' + esc(t.finale ? l.etape || '' : l.V + ' V, ' + l.D + ' D') + '</td></tr>').join('')
+        + '</tbody></table></div>';
+    }
+    if (t.finale) h += '<h2>Phase finale</h2><div class="tableau-defilant">' + BT.tableauHtml(t, equipeId) + '</div>';
+    if (BT.avecPoules(t)) {
+      BT.listePoules(t).forEach((p) => { h += '<h2>' + p.nom + '</h2>' + tableClassement(BT.classement(t, p.numero), r.qualifiesParPoule || 0); });
+    } else if (!final || t.finale) {
+      h += (t.finale ? '<h2>Championnat</h2>' : '') + tableClassement(BT.classement(t), Number(r.phaseFinale) || 0);
+    }
+    h += '<p class="note" style="margin-top:12px">Classement au nombre de victoires, puis au match entre les deux équipes à égalité, puis à la différence de sets et de points.'
+      + (BT.nbQualifies(t) >= 2 ? ' Q : qualifiée pour la phase finale si le classement reste le même.' : '') + '</p>';
+    contenu.innerHTML = h;
+  }
+
+  /* ---------- Récap à télécharger ---------- */
+
+  function texteScore(sets) {
+    return sets.map(([x, y]) => x + '-' + y).join(' · ');
+  }
+
+  function chiffresHtml() {
+    const st = BT.statsTournoi(t);
+    let h = '';
+    if (equipeId) {
+      const s = BT.statsEquipe(t, equipeId);
+      const lignes = [
+        ['Bilan', s.V + ' victoire' + (s.V > 1 ? 's' : '') + ', ' + s.D + ' défaite' + (s.D > 1 ? 's' : '') + (s.N ? ', ' + s.N + ' nul' + (s.N > 1 ? 's' : '') : '')],
+        ['Points', s.ptsP + ' marqués, ' + s.ptsC + ' encaissés (' + BT.signe(s.ptsP - s.ptsC) + ')'],
+        ['Meilleure série', s.serie + ' victoire' + (s.serie > 1 ? 's' : '') + ' d’affilée'],
+      ];
+      if (s.meilleureVictoire) lignes.push(['Plus belle victoire', texteScore(s.meilleureVictoire.score) + ' contre ' + BT.nomEquipe(t, s.meilleureVictoire.adversaire)]);
+      if (s.plusSerre) lignes.push(['Match le plus serré', texteScore(s.plusSerre.score) + ' contre ' + BT.nomEquipe(t, s.plusSerre.adversaire)]);
+      if (s.minutes) lignes.push(['Temps de jeu', s.minutes + ' minutes' + (s.plusLong ? ', plus long match ' + s.plusLong.duree + ' min' : '')]);
+      const cats = Object.keys(s.parCategorie).filter(Boolean);
+      if (cats.length > 1) lignes.push(['Par catégorie', cats.map((c) => BT.nomCategorie(c) + ' ' + s.parCategorie[c].V + ' V, ' + s.parCategorie[c].D + ' D').join(' · ')]);
+      h += '<h2>Tes chiffres</h2><dl class="chiffres-liste">' + lignes.map(([a, b]) => '<dt>' + a + '</dt><dd>' + esc(b) + '</dd>').join('') + '</dl>';
+    }
+    const lt = [['Matchs joués', st.matchs + ' sur ' + st.total], ['Points marqués', st.points.toLocaleString('fr-FR')]];
+    const affiche = (f) => BT.nomEquipe(t, f.m.a) + ' ' + BT.texteScore(f.m) + ' ' + BT.nomEquipe(t, f.m.b);
+    if (st.plusGrandEcart) lt.push(['Plus grand écart', affiche(st.plusGrandEcart)]);
+    if (st.plusSerre) lt.push(['Match le plus serré', affiche(st.plusSerre)]);
+    if (st.plusLong) lt.push(['Plus long match', st.plusLong.duree + ' min, ' + BT.nomEquipe(t, st.plusLong.m.a) + ' contre ' + BT.nomEquipe(t, st.plusLong.m.b)]);
+    if (st.champion) lt.push(['Vainqueur', st.champion.nom]);
+    h += '<h2>Le tournoi en chiffres</h2><dl class="chiffres-liste">' + lt.map(([a, b]) => '<dt>' + a + '</dt><dd>' + esc(b) + '</dd>').join('') + '</dl>';
+    return h;
+  }
+
+  async function genererRecap() {
+    const zone = document.getElementById('recap-image');
+    if (!zone) return;
+    zone.innerHTML = '<p class="note">Création de l’image…</p>';
+    try {
+      const canvas = await BT.dessinerRecap(t, equipeId);
+      const blob = await new Promise((ok) => canvas.toBlob(ok, 'image/png'));
+      if (recap && recap.url) URL.revokeObjectURL(recap.url);
+      const base = (equipeId ? BT.nomEquipe(t, equipeId) : t.nom).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      recap = { blob, url: URL.createObjectURL(blob), nom: 'recap-' + (base || 'tournoi') + '.png' };
+      zone.innerHTML = '<img src="' + recap.url + '" alt="Récapitulatif ' + esc(equipeId ? 'de l’équipe ' + BT.nomEquipe(t, equipeId) : 'du tournoi') + '">';
+      const lien = document.getElementById('recap-telecharger');
+      lien.href = recap.url;
+      lien.download = recap.nom;
+      lien.hidden = false;
+      const fichier = new File([blob], recap.nom, { type: 'image/png' });
+      document.getElementById('recap-partager').hidden = !(navigator.canShare && navigator.canShare({ files: [fichier] }));
+      document.getElementById('recap-maj').classList.remove('accent');
+    } catch (e) {
+      zone.innerHTML = '<p class="erreur-champ">Impossible de créer l’image sur cet appareil.</p>';
+    }
+  }
+
+  function vueRecap() {
+    contenu.innerHTML = '<section class="recap">'
+      + '<p class="note" style="margin-top:4px">' + (equipeId ? 'Le bilan de ton équipe et le tournoi en chiffres, en une image à garder ou à partager.' : 'Le tournoi en chiffres, en une image à garder ou à partager. Choisis ton équipe pour avoir ton propre récap.') + '</p>'
+      + '<div class="recap-image" id="recap-image"></div>'
+      + '<div class="actions recap-actions">'
+      + '<a class="bouton principal grand" id="recap-telecharger" hidden>Télécharger l’image</a>'
+      + '<button type="button" class="bouton grand" id="recap-partager" data-action="partager" hidden>Partager</button>'
+      + '<button type="button" class="bouton" id="recap-maj" data-action="recap-maj">Mettre à jour avec les derniers résultats</button>'
+      + '</div>'
+      + chiffresHtml()
+      + '</section>';
+    genererRecap();
+  }
+
+  function afficherOnglets() {
+    const nav = document.getElementById('onglets-tel');
+    nav.hidden = false;
+    document.getElementById('onglet-equipe').textContent = equipeId ? 'Mon équipe' : 'Équipes';
+    nav.querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.vue === vue)));
+  }
+
+  function changerVue(nouvelle) {
+    vue = nouvelle;
+    history.replaceState(null, '', location.pathname + location.search + (vue === 'equipe' ? '' : '#' + vue));
+    window.scrollTo(0, 0);
+    rendre(true);
+  }
+
+  function rendre(force) {
     if (!t) { introuvable(); return; }
     document.getElementById('titre').textContent = t.nom;
     document.title = t.nom + ' · Mon équipe';
     if (equipeId && !t.equipes.some((e) => e.id === equipeId)) equipeId = null;
+    afficherOnglets();
+    if (vue === 'classement') { vueClassement(); return; }
+    if (vue === 'recap') {
+      // L'image n'est pas recréée à chaque résultat : le bouton signale qu'il y a du nouveau.
+      if (force || !document.getElementById('recap-image')) vueRecap();
+      else { const b = document.getElementById('recap-maj'); if (b) b.classList.add('accent'); }
+      return;
+    }
     if (!equipeId) { choix(); return; }
     retenirChoix(equipeId);
     const enJeu = t.matchs.find((x) => x.statut === 'en_cours' && (x.a === equipeId || x.b === equipeId));
@@ -381,8 +517,15 @@
 
   /* ---------- Événements ---------- */
 
+  document.getElementById('onglets-tel').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-vue]');
+    if (b) changerVue(b.dataset.vue);
+  });
+
   contenu.addEventListener('click', (e) => {
     if (e.target.closest('[data-changer]')) { retenirChoix(null); return; }
+    const versVue = e.target.closest('[data-vue]');
+    if (versVue) { changerVue(versVue.dataset.vue); return; }
     const el = e.target.closest('[data-action]');
     if (!el || !t) return;
     const enCours = t.matchs.find((m) => m.statut === 'en_cours' && (m.a === equipeId || m.b === equipeId));
@@ -412,6 +555,15 @@
       case 'alerte-off':
         choisirAlerte(false);
         rendre();
+        break;
+      case 'recap-maj':
+        vueRecap();
+        break;
+      case 'partager':
+        if (recap) {
+          const fichier = new File([recap.blob], recap.nom, { type: 'image/png' });
+          navigator.share({ files: [fichier], title: t.nom, text: 'Mon récap du tournoi ' + t.nom }).catch(() => {});
+        }
         break;
       case 'retirer':
         if (enCours) {

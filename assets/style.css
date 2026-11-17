@@ -1140,6 +1140,26 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .e-pied-gauche .e-cat, .e-pied-gauche .e-appel { margin-right: 0; }
 .e-cat-liste { margin-right: .5em; font-size: .7em; font-weight: 800; text-transform: uppercase; color: rgba(255, 255, 255, .6); }
 
+/* ---------- Téléphone : onglets, classement en direct, récap ---------- */
+
+.onglets-tel { justify-content: space-around; padding: 0 4px; }
+.onglets-tel button { flex: 1; text-align: center; }
+.en-direct { display: flex; align-items: center; gap: 6px; margin: 4px 0 14px; font-weight: 700; color: var(--vert-700); }
+.recap-image {
+  display: grid;
+  place-items: center;
+  min-height: 200px;
+  margin: 12px 0 16px;
+  border-radius: var(--rayon);
+  background: var(--vert-50);
+  overflow: hidden;
+}
+.recap-image img { display: block; width: 100%; height: auto; }
+.recap-actions .bouton { flex: 1 1 auto; }
+.chiffres-liste { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; padding: 14px 16px; background: var(--carte); border: 1px solid var(--bord); border-radius: var(--rayon); }
+.chiffres-liste dt { font-weight: 750; color: var(--encre-douce); font-size: .9rem; }
+.chiffres-liste dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+
 /* ---------- Petits écrans ---------- */
 
 @media (max-width: 720px) {
