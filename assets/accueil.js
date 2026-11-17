@@ -9,6 +9,11 @@
     ? 'Ce sont les tournois que tu gères depuis cet appareil. Pour en gérer un depuis un autre téléphone, utilise son lien organisateur (onglet QR code).'
     : 'Les tournois sont enregistrés dans ce navigateur, sur cet appareil.';
 
+  // Mot de passe organisateur retenu sur cet appareil : posé sur chaque nouveau tournoi.
+  async function motDePasseAuto(id) {
+    try { await D.appliquerMotDePasseRetenu(id); } catch (e) { /* le tournoi reste sans mot de passe */ }
+  }
+
   function dateCourte(ts) {
     return new Date(ts).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
   }
@@ -39,6 +44,7 @@
     try {
       const t = BT.nouveauTournoi();
       await D.creer(t);
+      await motDePasseAuto(t.id);
       location.href = 'tournoi.html?t=' + encodeURIComponent(t.id) + '#reglages';
     } catch (e) {
       erreur.textContent = 'Création impossible. ' + (e && e.message ? e.message : 'Vérifie la connexion internet.');
@@ -63,6 +69,7 @@
       t.reglages = Object.assign({}, source.reglages);
       t.equipes = source.equipes.map((e) => ({ id: 'e' + BT.uid(6), nom: e.nom, joueurs: e.joueurs || '' }));
       await D.creer(t);
+      await motDePasseAuto(t.id);
       location.href = 'tournoi.html?t=' + encodeURIComponent(t.id) + '#reglages';
     } catch (err) {
       bouton.disabled = false;
@@ -103,6 +110,7 @@
       t.cree = Date.now();
       if (!confirm('Restaurer « ' + t.nom + ' » (' + t.equipes.length + ' équipes, ' + t.matchs.length + ' matchs) ? Il sera ajouté à tes tournois.')) return;
       await D.creer(t);
+      await motDePasseAuto(t.id);
       location.href = 'tournoi.html?t=' + encodeURIComponent(t.id);
     } catch (err) {
       alert(err && err.message === 'format' ? 'Ce fichier n’est pas une sauvegarde de tournoi.' : 'Restauration impossible. ' + (err && err.message ? err.message : ''));

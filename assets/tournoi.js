@@ -287,19 +287,20 @@
   function texteHoraires(tt) {
     const r = tt.reglages;
     const D = BT.dureeReglee(r);
-    if (!D) {
-      return r.heureFin
-        ? '<p>Indique la durée moyenne prévue d’un match pour savoir si le tournoi tient avant la fin de la salle.</p>'
-        : '';
-    }
+    const auto = !(Number(r.dureePrevue) > 0);
     const duree = BT.dureeEstimee(tt, D);
     if (!duree) return '';
-    let h = '<p>Avec des matchs de ' + Math.round(D / 60000) + ' min' + (r.reposMin ? ' et ' + r.reposMin + ' min de repos' : '')
+    const T = BT.nbTerrainsOuverts(tt);
+    const repos = r.reposMin ? ' et ' + r.reposMin + ' min de repos' : '';
+    let h = '<p>' + (auto
+      ? 'D’après tes réglages, un match dure environ ' + Math.round(D / 60000) + ' min. Sur ' + pluriel(T, 'terrain') + repos
+      : 'Avec des matchs de ' + Math.round(D / 60000) + ' min sur ' + pluriel(T, 'terrain') + repos)
       + ', compte environ <strong>' + dureeTexte(duree) + '</strong> de jeu';
     const debut = BT.heureDuJour(r.heureDebut);
     if (debut === null) {
       h += '.</p>';
       if (r.heureFin) h += '<p>Indique l’heure de début pour savoir si le tournoi tient avant la fin de la salle.</p>';
+      if (auto) h += '<p class="note">Si tu connais la durée habituelle de vos matchs, indique-la dans « Durée moyenne prévue d’un match » pour affiner.</p>';
       return h;
     }
     const fin = debut + duree;
@@ -312,6 +313,7 @@
       const marge = Math.floor((BT.heureFinSalle(tt, debut) - fin) / 60000);
       h += '<p class="horaires-ok">Ça tient avant la fin de la salle (' + esc(r.heureFin) + ')' + (marge >= 1 ? ', avec ' + dureeTexte(marge * 60000) + ' de marge' : '') + '.</p>';
     }
+    if (auto) h += '<p class="note">Si tu connais la durée habituelle de vos matchs, indique-la dans « Durée moyenne prévue d’un match » pour affiner.</p>';
     return h;
   }
 
@@ -657,8 +659,8 @@
     const bouton = form.querySelector('[type="submit"]');
     const motDePasse = champ.value.trim();
     msg.hidden = true;
-    if (motDePasse.length < 6) {
-      msg.textContent = 'Choisis au moins 6 caractères.';
+    if (motDePasse.length < 3) {
+      msg.textContent = 'Choisis au moins 3 caractères.';
       msg.hidden = false;
       return;
     }
@@ -673,7 +675,10 @@
       const acces = await BT.chiffrerCle(cle, motDePasse);
       const ok = await agir((tt) => { tt.acces = acces; return true; });
       champ.value = '';
-      if (ok) toast('Mot de passe enregistré. Donne-le seulement aux organisateurs.');
+      if (ok) {
+        D.retenirMotDePasse($('#mdp-retenir') && $('#mdp-retenir').checked ? motDePasse : '');
+        toast('Mot de passe enregistré. Donne-le seulement aux organisateurs.');
+      }
     } catch (e) {
       msg.textContent = 'Enregistrement impossible sur ce navigateur.';
       msg.hidden = false;
@@ -689,7 +694,7 @@
     zone.dataset.pret = '1';
     zone.innerHTML = '<form id="form-acces" class="acces-mdp" novalidate>'
       + '<label for="mdp-acces">Mot de passe organisateur</label>'
-      + '<div class="annonce-ligne"><input type="password" id="mdp-acces" maxlength="64" autocomplete="current-password">'
+      + '<div class="annonce-ligne"><input type="password" id="mdp-acces" maxlength="64" autocomplete="current-password" autocapitalize="none">'
       + '<button type="submit" class="bouton principal">Entrer</button></div>'
       + '<p class="erreur-champ" id="mdp-erreur" hidden></p></form>';
     zone.querySelector('form').addEventListener('submit', async (e) => {
@@ -775,8 +780,11 @@
         + '<p>' + (t.acces ? '<strong>Un mot de passe est défini.</strong> ' : '')
         + 'Avec ce mot de passe, un autre organisateur peut gérer le tournoi depuis son téléphone, sans le lien organisateur. '
         + 'Il ouvre la page des équipes, touche « Accès organisateur » en bas de page, puis entre le mot de passe.</p>'
-        + '<form id="form-mdp" class="annonce-ligne" novalidate><input type="password" id="mdp-nouveau" maxlength="64" autocomplete="new-password" placeholder="Au moins 6 caractères" aria-label="Mot de passe organisateur">'
-        + '<button type="submit" class="bouton principal">' + (t.acces ? 'Changer' : 'Enregistrer') + '</button></form>'
+        + '<form id="form-mdp" novalidate><div class="annonce-ligne"><input type="password" id="mdp-nouveau" maxlength="64" autocomplete="new-password" autocapitalize="none" placeholder="Au moins 3 caractères" aria-label="Mot de passe organisateur">'
+        + '<button type="submit" class="bouton principal">' + (t.acces ? 'Changer' : 'Enregistrer') + '</button></div>'
+        + caseHtml('mdp-retenir', true, 'Le mettre aussi sur mes prochains tournois créés depuis cet appareil') + '</form>'
+        + '<p class="note" style="margin:6px 0 0">Les majuscules ne comptent pas.'
+        + (D.motDePasseRetenu() ? ' Un mot de passe est retenu sur cet appareil pour tes prochains tournois. <button type="button" class="lien-bouton" data-action="mdp-oublier">Ne plus le retenir</button>' : '') + '</p>'
         + '<p class="erreur-champ" id="mdp-message" hidden></p>'
         + (t.acces ? '<div class="actions" style="margin-top:10px"><button type="button" class="bouton danger" data-action="mdp-supprimer">Supprimer le mot de passe</button></div>' : '')
         + '</div>';
@@ -870,7 +878,7 @@
       + '<div class="champ"><label for="r-duree">Durée maximum d’un match</label>' + nombre('r-duree', r.dureeLimite || 0, 0, 90)
       + '<span class="aide">En minutes, 0 si les matchs vont jusqu’au bout. Le temps restant s’affiche sur chaque terrain.</span></div>'
       + '<div class="champ"><label for="r-prevue">Durée moyenne prévue d’un match</label>' + nombre('r-prevue', r.dureePrevue || 0, 0, 90)
-      + '<span class="aide">En minutes, 0 si tu ne sais pas. Sert à estimer les horaires avant les premiers résultats, ensuite le site se base sur la durée réelle des matchs.</span></div>'
+      + '<span class="aide" id="r-prevue-aide"></span></div>'
       + '<div class="champ"><label for="r-repos">Repos minimum entre deux matchs d’une équipe</label>' + nombre('r-repos', r.reposMin || 0, 0, 30)
       + '<span class="aide">En minutes, 0 pour enchaîner. Un terrain peut rester libre quelques minutes, le temps qu’une équipe récupère.</span></div>'
       + '<div class="champ"><label for="r-terrains">Terrains disponibles</label>' + nombre('r-terrains', r.terrains, 1, 30)
@@ -1071,6 +1079,8 @@
         + '<span><strong>' + Math.ceil(total / r.terrains) + '</strong> rotations sur ' + pluriel(r.terrains, 'terrain') + '</span>' : '')
       + '<span>' + esc(BT.texteFormat(r)) + '</span>';
 
+    $('#r-prevue-aide').textContent = 'En minutes. À 0, le site l’estime d’après le format des matchs, soit environ '
+      + Math.round(BT.dureeSelonFormat(r) / 60000) + ' min (environ 25 secondes par point joué). Après les premiers matchs, il se base sur leur durée réelle.';
     clearTimeout(minuteurHoraires);
     minuteurHoraires = setTimeout(estimerHoraires, 200);
 
@@ -1545,6 +1555,11 @@
             return true;
           });
         }
+        break;
+      case 'mdp-oublier':
+        D.retenirMotDePasse('');
+        rendrePartager();
+        toast('Tes prochains tournois n’auront plus de mot de passe automatiquement.');
         break;
       case 'mdp-supprimer':
         if (confirm('Supprimer le mot de passe organisateur ? Les appareils déjà organisateurs le restent.')) {

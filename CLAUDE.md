@@ -25,8 +25,8 @@ commandes, commits et textes du site.
   (report, résultat effacé) : le numéro est retiré et redonné au prochain appel. Toujours afficher
   `BT.numero(t, m)`, jamais `m.numero`. La page des équipes montre le dernier numéro appelé
   (`numeroActuel`) et le numéro du prochain match de l'équipe.
-- Heures estimées : `dureeMatch()` (médiane des 12 derniers matchs, sinon la durée maximum réglée),
-  `planifier(t, durée)` et `finEstimee()`. Rien n'est affiché tant qu'aucune durée n'est connue.
+- Heures estimées : `dureeMatch()` (médiane des 12 derniers matchs, sinon `dureeReglee`),
+  `planifier(t, durée)` et `finEstimee()`. Avant le lancement, pas d'heure sans heure de début à venir.
 - Forfaits : `enregistrerForfait()` (un match, champ `forfait` = équipe perdante) et
   `abandonEquipe()` / `annulerAbandon()` (champ `abandon` sur l'équipe). Un forfait seul ne lance
   pas le tournoi (`demarre()`).
@@ -58,7 +58,9 @@ commandes, commits et textes du site.
   compte si la durée des matchs est connue, `attenteRepos(t)` donne l'attente. La page de gestion
   relance l'appel toutes les 15 s quand le repos est fini (transaction, sans doublon).
 - Horaires : `reglages.heureDebut` / `heureFin` (« HH:MM », fin de la salle) et `dureePrevue` (minutes).
-  `dureeMatch()` prend la médiane réelle, sinon `dureeReglee(r)` (durée prévue, puis durée maximum).
+  `dureeMatch()` prend la médiane réelle, sinon `dureeReglee(r)` : la durée prévue, sinon
+  `dureeSelonFormat(r)` (environ 25 s par point joué, perdant à deux tiers des points du gagnant,
+  1 min d'installation, plafonné à la durée maximum ; `dureeFinale` pour un format de phase finale).
   `dureeEstimee(t, D)` simule tout le tournoi (phase finale comprise), `depassementSalle()` compare à
   `heureFinSalle()`. Avant le lancement, `planifier` part de l'heure de début si elle est à venir.
 - Terrains fermés : `t.fermes` (numéros), `fermerTerrain` / `ouvrirTerrain`, exclus de `terrainsLibres`,
@@ -69,10 +71,13 @@ commandes, commits et textes du site.
   à l'ouverture tant que ce téléphone n'a pas lu la version actuelle (`empreinteRegles`, clé locale
   `badminton:regles:<id>`), bouton « Règles » dans la barre.
 - Mot de passe organisateur (mode en ligne) : `t.acces = { sel, iv, chiffre }` = clé organisateur chiffrée
-  avec le mot de passe (PBKDF2 200 000 tours puis AES-GCM, `chiffrerCle` / `dechiffrerCle`). Défini,
+  avec le mot de passe (PBKDF2 200 000 tours puis AES-GCM, `chiffrerCle` / `dechiffrerCle`), au moins
+  3 caractères, sans tenir compte des majuscules. Jamais écrit dans le dépôt (public). Défini,
   changé ou supprimé dans l'onglet QR code ; saisi sur `tournoi.html` par un appareil non organisateur
   (lien « Accès organisateur » en bas de la page des équipes). Aucune règle Firebase à changer. Retiré
-  à la restauration d'une sauvegarde (nouvelle clé).
+  à la restauration d'une sauvegarde (nouvelle clé). Option « mes prochains tournois » : mot de passe
+  retenu sur l'appareil (`badminton:mdp-defaut`) et posé sur chaque tournoi qu'il crée
+  (`appliquerMotDePasseRetenu` : création, Recommencer, restauration).
 - Sauvegarde : fichier JSON `{ format: 'badminton-tournoi-loisir', version, date, tournoi }`
   (Réglages), restauré depuis l'accueil comme un nouveau tournoi (nouvel identifiant).
 - `t.pause` suspend l'appel automatique (`appelAutoActif`), `t.annonce` est le message affiché

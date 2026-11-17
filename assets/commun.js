@@ -565,10 +565,16 @@
   // dans l'ordre où ils ont commencé (même règle que l'appel automatique).
   // Avec une durée de match (en ms), donne aussi l'heure de début estimée de chacun.
   function planifier(t, duree, maintenant) {
+    const horlogeDonnee = !!maintenant;
     maintenant = maintenant || Date.now();
+    let D = duree || 0;
     // Avant le lancement, les heures partent de l'heure de début prévue si elle est à venir.
-    if (!demarre(t)) maintenant = Math.max(maintenant, heureDuJour(t.reglages.heureDebut, maintenant) || 0);
-    const D = duree || 0;
+    // Sans heure de début à venir, on ne donne pas d'heure (on ne sait pas quand le tournoi sera lancé).
+    if (!demarre(t) && !horlogeDonnee) {
+      const debut = heureDuJour(t.reglages.heureDebut, maintenant);
+      if (debut !== null && debut > maintenant) maintenant = debut;
+      else D = 0;
+    }
     const T = nbTerrainsOuverts(t);
     const enJeu = t.matchs.filter((m) => m.statut === 'en_cours')
       .sort((x, y) => (x.debut || 0) - (y.debut || 0))
@@ -639,11 +645,31 @@
     return dureeReglee(t.reglages);
   }
 
-  // Durée d'un match d'après les réglages : la durée prévue, sinon la durée maximum (ms ou null).
+  // Durée d'un match d'après les réglages : la durée prévue par les organisateurs,
+  // sinon une estimation d'après le format (ms).
   function dureeReglee(r) {
     if (Number(r.dureePrevue) > 0) return r.dureePrevue * 60 * 1000;
-    if (Number(r.dureeLimite) > 0) return r.dureeLimite * 60 * 1000;
-    return null;
+    return dureeSelonFormat(r);
+  }
+
+  // Estimation d'après le format : environ 25 secondes par point joué (échanges et pauses compris),
+  // le perdant d'un set marquant en moyenne les deux tiers des points du gagnant, une minute pour
+  // s'installer, et au plus la durée maximum réglée.
+  const SECONDES_PAR_POINT = 25;
+  function dureeSelonFormat(reg) {
+    const n = Math.max(1, Number(reg.sets) || 1);
+    const sets = reg.auMeilleur && n > 1 && n % 2 === 1 ? (n + 1) / 2 + 0.4 * (n - 1) / 2 : n;
+    const points = sets * (Number(reg.points) || 15) * 1.65;
+    let minutes = Math.round((points * SECONDES_PAR_POINT + 60) / 60);
+    if (Number(reg.dureeLimite) > 0) minutes = Math.min(minutes, Number(reg.dureeLimite));
+    return Math.max(1, minutes) * 60 * 1000;
+  }
+
+  // Durée d'un match de phase finale quand elle a son propre format.
+  function dureeFinale(t, D) {
+    const r = t.reglages;
+    if (!r.formatFinale || Number(r.dureePrevue) > 0) return D;
+    return dureeSelonFormat(formatMatch(t, { phase: 'finale' }));
   }
 
   /* ---------- Horaires ---------- */
@@ -673,7 +699,8 @@
     let fin = base;
     planifier(copie, D, base).forEach((x) => { if (x.heure) fin = Math.max(fin, x.heure + D); });
     const T = Math.max(1, nbTerrainsOuverts(t));
-    toursFinaleRestants(t).forEach((n) => { fin += Math.ceil(n / T) * D; });
+    const DF = dureeFinale(t, D);
+    toursFinaleRestants(t).forEach((n) => { fin += Math.ceil(n / T) * DF; });
     return fin - base;
   }
 
@@ -693,7 +720,8 @@
     t.matchs.forEach((m) => { if (m.statut === 'en_cours') fin = Math.max(fin, (m.debut || maintenant) + D); });
     planifier(t, D, maintenant).forEach((x) => { if (x.heure) fin = Math.max(fin, x.heure + D); });
     const T = Math.max(1, nbTerrainsOuverts(t));
-    toursFinaleRestants(t).forEach((n) => { fin += Math.ceil(n / T) * D; });
+    const DF = dureeFinale(t, D);
+    toursFinaleRestants(t).forEach((n) => { fin += Math.ceil(n / T) * DF; });
     return fin;
   }
 
@@ -1536,7 +1564,11 @@
       base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
   }
 
+  // Majuscules et espaces autour ignorés : « Abc », « ABC » et « abc » ouvrent le même accès.
+  const normaliserMotDePasse = (x) => String(x || '').trim().toLowerCase();
+
   async function chiffrerCle(cle, motDePasse) {
+    motDePasse = normaliserMotDePasse(motDePasse);
     const sel = globalThis.crypto.getRandomValues(new Uint8Array(16));
     const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
     const k = await cleDuMotDePasse(motDePasse, sel);
@@ -1547,13 +1579,16 @@
   // Clé organisateur si le mot de passe est le bon, sinon null.
   async function dechiffrerCle(acces, motDePasse) {
     if (!acces || !acces.sel || !acces.iv || !acces.chiffre) return null;
-    try {
-      const k = await cleDuMotDePasse(motDePasse, depuisBase64(acces.sel));
-      const clair = await globalThis.crypto.subtle.decrypt({ name: 'AES-GCM', iv: depuisBase64(acces.iv) }, k, depuisBase64(acces.chiffre));
-      return new TextDecoder().decode(clair);
-    } catch (e) {
-      return null;
+    // Forme normalisée d'abord, puis telle quelle (mots de passe enregistrés avant la normalisation).
+    const essais = Array.from(new Set([normaliserMotDePasse(motDePasse), String(motDePasse || '').trim()]));
+    for (const essai of essais) {
+      try {
+        const k = await cleDuMotDePasse(essai, depuisBase64(acces.sel));
+        const clair = await globalThis.crypto.subtle.decrypt({ name: 'AES-GCM', iv: depuisBase64(acces.iv) }, k, depuisBase64(acces.chiffre));
+        return new TextDecoder().decode(clair);
+      } catch (e) { /* essai suivant */ }
     }
+    return null;
   }
 
   /* ---------- Affichage ---------- */
@@ -1626,7 +1661,7 @@
     verifierFormat, paires, ordonner, genererMatchs,
     matchsEnCours, matchsEnAttente, terrainsLibres, terrainsFermes, terrainFerme, nbTerrainsOuverts, fermerTerrain, ouvrirTerrain, remplirTerrains, lancer, demarre, prochains, reporter, appelAutoActif,
     numero, numeroActuel, attenteRepos,
-    planifier, dureeMatch, dureeReglee, finEstimee, dureeEstimee, heureDuJour, heureFinSalle, depassementSalle, prioriser,
+    planifier, dureeMatch, dureeReglee, dureeSelonFormat, finEstimee, dureeEstimee, heureDuJour, heureFinSalle, depassementSalle, prioriser,
     resultat, texteScore, verifierSet, verifierScore, enregistrerScore,
     setsForfait, enregistrerForfait, abandonEquipe, annulerAbandon, effacerResultat,
     nomPoule, avecPoules, listePoules, taillesPoules, verifierPoules, verifierDeroulement,

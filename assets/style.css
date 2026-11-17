@@ -1198,7 +1198,8 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .e-terrain--ferme { opacity: .55; }
 .acces-mdp { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--bord); display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .acces-mdp label { font-weight: 650; }
-#form-mdp { margin-top: 4px; }
+#form-mdp { margin-top: 4px; display: grid; gap: 10px; }
+.lien-bouton { padding: 0; border: 0; background: none; color: var(--vert-700); font: inherit; font-weight: 650; text-decoration: underline; cursor: pointer; }
 .acces-orga { margin-top: 18px; text-align: center; }
 .bouton-regles { margin-left: auto; flex: none; background: rgba(255, 255, 255, .12); color: #fff; border-color: rgba(255, 255, 255, .35); }
 .bouton-regles:hover { border-color: #fff; }
