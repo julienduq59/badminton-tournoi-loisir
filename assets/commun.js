@@ -1572,13 +1572,16 @@
     }
     const cats = categoriesJouees(r);
     const taillesImpaires = (poules ? taillesPoules(n, r.nbPoules) : [n]).filter((x) => x % 2 === 1);
-    const morceaux = cats.map((c) => {
-      if (c.tous) return 'un ' + c.nom.toLowerCase() + ' contre chaque autre équipe' + (poules ? ' de sa poule' : '');
-      const plus = c.k % 2 === 1 && taillesImpaires.length;
-      return c.k + ' ' + (c.k > 1 ? c.pluriel : c.nom.toLowerCase())
-        + (plus ? ' (' + (c.k + 1) + ' pour une équipe' + (poules ? ' par poule impaire' : '') + ', le nombre d’équipes étant impair)' : '');
-    });
+    const morceaux = cats.map((c) => (c.tous
+      ? 'un ' + c.nom.toLowerCase() + ' contre chaque autre équipe' + (poules ? ' de sa poule' : '')
+      : c.k + ' ' + (c.k > 1 ? c.pluriel : c.nom.toLowerCase())));
     if (morceaux.length) der.push('Chaque équipe joue ' + listeEt(morceaux) + '.');
+    // Nombre impair d'équipes et de matchs : une équipe joue un match de plus (pas la même d'une catégorie à l'autre).
+    const enPlus = cats.filter((c) => !c.tous && c.k % 2 === 1 && taillesImpaires.length);
+    if (enPlus.length) {
+      der.push((poules ? 'Dans chaque poule au nombre impair d’équipes, ' : 'Comme le nombre d’équipes est impair, ')
+        + listeEt(enPlus.map((c, i) => (i === 0 ? 'une équipe joue ' : 'une autre ') + (c.k + 1) + ' ' + c.pluriel)) + '.');
+    }
     if (r.mixteEgalDouble && cats.some((c) => c.cle === 'double')) der.push('Pas de différence entre double et mixte.');
     const Q = nbQualifies(t);
     if (Q >= 2) {

@@ -1035,7 +1035,7 @@
       const k = c.tous ? taille - 1 : c.k;
       // Nombre impair d'équipes et de matchs : une équipe joue un match de plus.
       const plus = !c.tous && tailles.some((x) => BT.unMatchDePlus(x, c.k));
-      return k + ' ' + (k > 1 ? c.pluriel : c.nom.toLowerCase()) + (plus ? ' (' + (k + 1) + ' pour une équipe' + (r.format === 'poules' ? ' par poule impaire' : '') + ')' : '');
+      return k + ' ' + (k > 1 ? c.pluriel : c.nom.toLowerCase()) + (plus ? ' (' + (k + 1) + ' pour une équipe' + (r.format === 'poules' ? ' dans chaque poule impaire' : '') + ')' : '');
     });
     if (!morceaux.length) return '';
     const liste = morceaux.length > 1 ? morceaux.slice(0, -1).join(', ') + ' et ' + morceaux[morceaux.length - 1] : morceaux[0];
