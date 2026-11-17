@@ -64,7 +64,7 @@ commandes, commits et textes du site.
   (`BT.dessinerRecap(t, equipeId)`, récap du tournoi sans équipe) à partir de `statsEquipe`,
   `statsTournoi` et `placeEquipe` (commun.js) ; elle n'est recréée que sur demande.
 - Repos minimum (`reglages.reposMin`, minutes) : `remplirTerrains` n'appelle pas un match dont une
-  équipe a fini il y a moins longtemps (sauf appel à la main, `ignorerRepos`), `planifier` en tient
+  équipe a fini il y a moins longtemps (sauf « Jouer » sur un match précis), `planifier` en tient
   compte si la durée des matchs est connue, `attenteRepos(t)` donne l'attente. La page de gestion
   relance l'appel toutes les 15 s quand le repos est fini (transaction, sans doublon).
 - Horaires : `reglages.heureDebut` / `heureFin` (« HH:MM », fin de la salle) et `dureePrevue` (minutes).
