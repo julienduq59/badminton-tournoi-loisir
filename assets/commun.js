@@ -26,6 +26,7 @@
     scoresJoueurs: true,
     validationAuto: false,
     dureeLimite: 0,
+    reposMin: 0,              // minutes de repos minimum entre deux matchs d'une équipe
     // Déroulement : une seule poule (championnat) ou plusieurs poules, puis phase finale éventuelle.
     format: 'championnat',
     nbPoules: 3,
@@ -376,11 +377,12 @@
   // Choisit le prochain match parmi ceux dont les deux équipes sont libres :
   // d'abord les matchs mis en priorité par un organisateur, puis ceux où aucune
   // équipe ne sort du terrain, puis les équipes qui ont le moins joué, puis l'ordre de la file.
-  function choisir(attente, occupees, eviter, joues) {
+  function choisir(attente, occupees, eviter, joues, pret) {
     let meilleur = null;
     let cleMeilleure = null;
     for (const m of attente) {
       if (occupees.has(m.a) || occupees.has(m.b)) continue;
+      if (pret && !pret(m)) continue;
       const cle = [
         m.priorite ? 0 : 1,
         eviter && (eviter.has(m.a) || eviter.has(m.b)) ? 1 : 0,
@@ -462,17 +464,56 @@
     delete m.priorite;
   }
 
+  /* ---------- Repos minimum entre deux matchs d'une équipe ---------- */
+
+  function reposMs(t) {
+    return (Number(t.reglages.reposMin) || 0) * 60000;
+  }
+
+  // Heure de fin du dernier match joué sur un terrain par chaque équipe.
+  function finsParEquipe(t) {
+    const fins = new Map();
+    t.matchs.forEach((m) => {
+      if (m.statut !== 'termine' || !m.fin || !m.debut) return;
+      [m.a, m.b].forEach((e) => fins.set(e, Math.max(fins.get(e) || 0, m.fin)));
+    });
+    return fins;
+  }
+
+  // Temps d'attente (ms) avant qu'un match aux équipes libres puisse être appelé :
+  // 0 s'il y en a un tout de suite, null s'il n'y en a aucun ou sans repos minimum.
+  function attenteRepos(t, maintenant) {
+    const R = reposMs(t);
+    if (!R) return null;
+    maintenant = maintenant || Date.now();
+    const occupees = new Set();
+    matchsEnCours(t).forEach((m) => { occupees.add(m.a); occupees.add(m.b); });
+    const fins = finsParEquipe(t);
+    let min = null;
+    matchsEnAttente(t).forEach((m) => {
+      if (occupees.has(m.a) || occupees.has(m.b)) return;
+      const pret = Math.max(fins.get(m.a) || 0, fins.get(m.b) || 0) + R;
+      const reste = Math.max(0, pret - maintenant);
+      min = min === null ? reste : Math.min(min, reste);
+    });
+    return min;
+  }
+
   // Appelle un match sur chaque terrain libre (ou seulement sur les terrains
-  // indiqués). Retourne les matchs appelés.
-  function remplirTerrains(t, eviter, seulement, exclus) {
+  // indiqués). Retourne les matchs appelés. Un appel à la main peut ignorer le repos minimum.
+  function remplirTerrains(t, eviter, seulement, exclus, ignorerRepos) {
     const occupees = new Set();
     matchsEnCours(t).forEach((m) => { occupees.add(m.a); occupees.add(m.b); });
     const attente = matchsEnAttente(t).filter((m) => !exclus || !exclus.has(m.id));
     const joues = compterJoues(t);
+    const R = ignorerRepos ? 0 : reposMs(t);
+    const fins = R ? finsParEquipe(t) : null;
+    const maintenant = Date.now();
+    const pret = R ? (m) => (fins.get(m.a) || 0) + R <= maintenant && (fins.get(m.b) || 0) + R <= maintenant : null;
     const appeles = [];
     const cibles = terrainsLibres(t).filter((n) => !seulement || seulement.includes(n));
     for (const terrain of cibles) {
-      const m = choisir(attente, occupees, eviter, joues);
+      const m = choisir(attente, occupees, eviter, joues, pret);
       if (!m) break;
       lancer(t, m, terrain);
       prendre(m, attente, occupees, joues);
@@ -505,17 +546,34 @@
     const occupees = new Set();
     enJeu.forEach(({ m }) => { occupees.add(m.a); occupees.add(m.b); });
     const joues = compterJoues(t);
+    // Le repos minimum ne compte dans la prévision que si l'on connaît la durée des matchs.
+    const R = D ? reposMs(t) : 0;
+    const fins = R ? finsParEquipe(t) : new Map();
     let eviter = null;
     let horloge = maintenant;
+    const pret = R ? (m) => (fins.get(m.a) || 0) + R <= horloge && (fins.get(m.b) || 0) + R <= horloge : null;
     const resultat = [];
     while (attente.length) {
       if (enJeu.length < T) {
-        const m = choisir(attente, occupees, eviter, joues);
+        const m = choisir(attente, occupees, eviter, joues, pret);
         if (m) {
           resultat.push({ m, heure: D ? horloge : null });
           prendre(m, attente, occupees, joues);
           enJeu.push({ m, fin: horloge + D });
           continue;
+        }
+        // Des équipes libres se reposent encore : on avance jusqu'à la fin de leur repos.
+        if (R) {
+          let prochain = null;
+          attente.forEach((x) => {
+            if (occupees.has(x.a) || occupees.has(x.b)) return;
+            const p = Math.max(fins.get(x.a) || 0, fins.get(x.b) || 0) + R;
+            if (prochain === null || p < prochain) prochain = p;
+          });
+          if (prochain !== null && prochain > horloge && (!enJeu.length || prochain < enJeu[0].fin)) {
+            horloge = prochain;
+            continue;
+          }
         }
       }
       const fini = enJeu.shift();
@@ -526,6 +584,7 @@
       horloge = Math.max(horloge, fini.fin);
       occupees.delete(fini.m.a);
       occupees.delete(fini.m.b);
+      if (R) { fins.set(fini.m.a, fini.fin); fins.set(fini.m.b, fini.fin); }
       eviter = new Set([fini.m.a, fini.m.b]);
     }
     return resultat;
@@ -1339,7 +1398,7 @@
     nouveauTournoi, ajusterEquipes, equipe, nomEquipe, statut, texteFormat,
     verifierFormat, paires, ordonner, genererMatchs,
     matchsEnCours, matchsEnAttente, terrainsLibres, remplirTerrains, lancer, demarre, prochains, reporter, appelAutoActif,
-    numero, numeroActuel,
+    numero, numeroActuel, attenteRepos,
     planifier, dureeMatch, finEstimee, prioriser,
     resultat, texteScore, verifierSet, verifierScore, enregistrerScore,
     setsForfait, enregistrerForfait, abandonEquipe, annulerAbandon, effacerResultat,

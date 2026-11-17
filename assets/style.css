@@ -1076,7 +1076,17 @@ details > summary.bouton::-webkit-details-marker { display: none; }
   .fiche-joueurs { font-size: 11pt; margin-bottom: 3mm; }
   .fiche .qr { width: 45mm; margin: 0 auto 3mm; border: 0; }
   .fiche-texte { font-size: 10pt; }
+  .feuille h1 { font-size: 16pt; margin: 0 0 2mm; }
+  .feuille p { font-size: 9pt; margin: 0 0 4mm; }
+  .feuille-table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+  .feuille-table th, .feuille-table td { border: 1px solid #555; padding: 1.6mm 2mm; text-align: left; }
+  .feuille-table th { background: #eee; }
+  .feuille-table tr { break-inside: avoid; }
+  .feuille-table .score { white-space: nowrap; }
+  .case-score { display: inline-block; width: 8mm; height: 5mm; border-bottom: 1px solid #333; }
+  .case-ok { display: inline-block; width: 4mm; height: 4mm; border: 1px solid #333; }
 }
+.bouton-feuille { margin-left: auto; }
 
 /* ---------- Page des équipes : où en est la salle ---------- */
 

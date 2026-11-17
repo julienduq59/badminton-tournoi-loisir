@@ -85,6 +85,31 @@
   }
 
   // Une fiche par équipe avec son propre QR code (à distribuer à l'accueil).
+  // Feuille de matchs à imprimer (secours papier) : tous les matchs dans l'ordre des numéros.
+  function imprimerFeuille() {
+    const reg = t.reglages;
+    const lignes = t.matchs.slice().sort((x, y) => BT.numero(t, x) - BT.numero(t, y));
+    const avecTour = lignes.some((m) => BT.etiquetteMatch(t, m));
+    const caseScore = (m) => {
+      if (m.statut === 'termine') return esc(m.forfait ? 'Forfait ' + BT.nomEquipe(t, m.forfait) : BT.texteScore(m));
+      const n = BT.formatMatch(t, m).sets;
+      return Array.from({ length: n }, () => '<span class="case-score"></span>-<span class="case-score"></span>').join(' ');
+    };
+    $('#fiches').innerHTML = '<div class="feuille"><h1>' + esc(t.nom) + ', feuille de matchs</h1>'
+      + '<p>' + esc(BT.texteFormat(reg)) + '. Imprimée le ' + new Date().toLocaleDateString('fr-FR') + ' à ' + BT.heure(Date.now()) + '. '
+      + 'Les numéros des matchs pas encore appelés sont prévus et peuvent changer un peu.</p>'
+      + '<table class="feuille-table"><thead><tr><th>N°</th><th>Catégorie</th>' + (avecTour ? '<th>Poule ou tour</th>' : '') + '<th>Équipe 1</th><th>Équipe 2</th><th>Terrain</th><th>Score</th><th>OK</th></tr></thead><tbody>'
+      + lignes.map((m) => '<tr><td>' + BT.numero(t, m) + '</td><td>' + esc(BT.categorieMatch(t, m)) + '</td>' + (avecTour ? '<td>' + esc(BT.etiquetteMatch(t, m)) + '</td>' : '')
+        + '<td>' + nom(m.a) + '</td><td>' + nom(m.b) + '</td><td>' + (m.statut !== 'attente' && m.terrain ? m.terrain : '') + '</td>'
+        + '<td class="score">' + caseScore(m) + '</td><td>' + (m.statut === 'termine' ? '✓' : '<span class="case-ok"></span>') + '</td></tr>').join('')
+      + '</tbody></table></div>';
+    $('#fiches').hidden = false;
+    document.body.classList.add('impression-fiches');
+    window.print();
+    document.body.classList.remove('impression-fiches');
+    $('#fiches').hidden = true;
+  }
+
   function imprimerFiches() {
     const el = $('#fiches');
     el.innerHTML = '<div class="fiches-grille">' + t.equipes.map((e) => {
@@ -299,6 +324,7 @@
     else if (n > t.reglages.terrains) texte = 'Terrain retiré';
     else if (!BT.matchsEnAttente(t).length) texte = 'Plus de match à appeler';
     else if (!appelPossible) texte = 'Les équipes restantes jouent déjà';
+    else if (BT.attenteRepos(t) > 0 && BT.appelAutoActif(t)) texte = 'Repos des équipes, appel dans ' + Math.max(1, Math.ceil(BT.attenteRepos(t) / 60000)) + ' min';
     const bouton = st === 'en_cours' && appelPossible && n <= t.reglages.terrains
       ? '<button type="button" class="bouton" data-action="appeler" data-terrain="' + n + '">Appeler le match suivant</button>'
       : '';
@@ -497,6 +523,7 @@
       ['attente', 'À jouer', aJouer.length], ['termine', 'Terminés', termines.length]];
     let h = progression() + '<div class="filtres">'
       + filtres.map(([cle, libelle, n]) => '<button type="button" data-action="filtre" data-valeur="' + cle + '" aria-pressed="' + (filtre === cle) + '">' + libelle + ' (' + n + ')</button>').join('')
+      + '<button type="button" data-action="feuille" class="bouton-feuille">Imprimer la feuille de matchs</button>'
       + '<select id="filtre-equipe" aria-label="Filtrer par équipe"><option value="">Toutes les équipes</option>'
       + t.equipes.map((e) => '<option value="' + esc(e.id) + '"' + (e.id === filtreEquipe ? ' selected' : '') + '>' + esc(e.nom) + '</option>').join('')
       + '</select></div>';
@@ -681,6 +708,8 @@
       + '<div class="champ" id="r-plafond-bloc"><label for="r-plafond">Score maximum d’un set</label>' + nombre('r-plafond', r.plafond, 1, 99) + '</div></div>'
       + '<div class="champ"><label for="r-duree">Durée maximum d’un match</label>' + nombre('r-duree', r.dureeLimite || 0, 0, 90)
       + '<span class="aide">En minutes, 0 si les matchs vont jusqu’au bout. Le temps restant s’affiche sur chaque terrain.</span></div>'
+      + '<div class="champ"><label for="r-repos">Repos minimum entre deux matchs d’une équipe</label>' + nombre('r-repos', r.reposMin || 0, 0, 30)
+      + '<span class="aide">En minutes, 0 pour enchaîner. Un terrain peut rester libre quelques minutes, le temps qu’une équipe récupère.</span></div>'
       + '<div class="champ"><label for="r-terrains">Terrains disponibles</label>' + nombre('r-terrains', r.terrains, 1, 30)
       + caseHtml('r-auto', r.appelAuto, 'Appeler automatiquement le match suivant dès qu’un terrain se libère')
       + '</div></div>'
@@ -707,6 +736,9 @@
       + '<div class="actions" style="margin-top:22px"><button type="submit" class="bouton principal grand" id="r-enregistrer">Enregistrer</button>'
       + '<span class="note" id="r-info" role="status"></span></div>'
       + '</form>'
+      + '<div class="carte" style="margin-top:16px"><h2>Sauvegarde</h2>'
+      + '<p class="note">Un fichier qui contient tout le tournoi (équipes, réglages, matchs et scores). Il se restaure depuis la page d’accueil, sur n’importe quel appareil.</p>'
+      + '<div class="actions"><button type="button" class="bouton" data-action="sauvegarde">Télécharger une sauvegarde</button></div></div>'
       + (t.matchs.length ? '<div class="carte" style="margin-top:16px"><h2>Remise à zéro</h2>'
         + '<p class="note">Effacer les scores remet tous les matchs à jouer, dans l’ordre de départ.</p>'
         + '<div class="actions"><button type="button" class="bouton danger" data-action="recreer">Effacer tous les scores</button>'
@@ -922,6 +954,7 @@
       case 'r-plafond': { const p = BT.entier(v, 1, 99, null); if (p) { r.plafond = p; b.plafondManuel = true; } break; }
       case 'r-terrains': { const n = BT.entier(v, 1, 30, null); if (n) r.terrains = n; break; }
       case 'r-duree': { const d = BT.entier(v, 0, 90, null); if (d !== null) r.dureeLimite = d; break; }
+      case 'r-repos': { const d = BT.entier(v, 0, 30, null); if (d !== null) r.reposMin = d; break; }
       case 'r-auto': r.appelAuto = cible.checked; break;
       case 'r-joueurs': r.scoresJoueurs = cible.checked; break;
       case 'r-validation': r.validationAuto = cible.checked; break;
@@ -1199,6 +1232,21 @@
         try { localStorage.setItem('badminton:lien-note:' + id, 'oui'); } catch (err) { /* stockage indisponible */ }
         rendreDirect();
         break;
+      case 'feuille':
+        imprimerFeuille();
+        break;
+      case 'sauvegarde': {
+        const maintenant = new Date();
+        const horodatage = maintenant.toISOString().slice(0, 16).replace(/[-:T]/g, '');
+        const contenu = JSON.stringify({ format: 'badminton-tournoi-loisir', version: 1, date: maintenant.toISOString(), tournoi: t }, null, 1);
+        const lien = document.createElement('a');
+        lien.href = URL.createObjectURL(new Blob([contenu], { type: 'application/json' }));
+        lien.download = nomFichier('sauvegarde-' + horodatage).replace(/\.csv$/, '.json');
+        document.body.appendChild(lien);
+        lien.click();
+        setTimeout(() => { URL.revokeObjectURL(lien.href); lien.remove(); }, 1000);
+        break;
+      }
       case 'fiches':
         imprimerFiches();
         break;
@@ -1288,7 +1336,8 @@
         break;
       case 'appeler': {
         const terrain = Number(el.dataset.terrain);
-        agir((tt) => BT.remplirTerrains(tt, null, [terrain]).length > 0);
+        // Appel à la main : le repos minimum n'est pas imposé.
+        agir((tt) => BT.remplirTerrains(tt, null, [terrain], null, true).length > 0);
         break;
       }
       case 'jouer':
@@ -1339,6 +1388,13 @@
     rendreMatchs();
   });
   setInterval(majChronos, 15000);
+
+  // Avec un repos minimum, un terrain peut attendre : on appelle le match dès que le repos est fini.
+  setInterval(() => {
+    if (!t || !BT.appelAutoActif(t) || !BT.demarre(t) || !BT.terrainsLibres(t).length) return;
+    if (BT.attenteRepos(t) !== 0) return;
+    agir((tt) => BT.remplirTerrains(tt).length > 0);
+  }, 15000);
   document.addEventListener('submit', (e) => {
     if (e.target.id === 'form-reglages') {
       e.preventDefault();

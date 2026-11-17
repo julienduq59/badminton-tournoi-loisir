@@ -19,6 +19,8 @@ Adresse du site : https://julienduq59.github.io/badminton-tournoi-loisir/
 - Pendant le tournoi : temps écoulé ou restant sur chaque terrain (durée maximum d'un match en option), heure de fin estimée, heure de passage estimée pour chaque équipe, match mis en priorité, forfait sur un match, abandon d'une équipe, filtre des matchs par équipe.
 - Alertes : l'écran de la salle met en avant chaque nouveau match appelé et peut sonner ; le téléphone d'un joueur sonne et vibre quand le match de son équipe est appelé (page ouverte).
 - Message de l'organisateur affiché sur l'écran de la salle et les téléphones, pause des appels automatiques.
+- Repos minimum entre deux matchs d'une équipe (option) : un terrain peut attendre quelques minutes, l'écran affiche « reprise dans 3 min ».
+- Secours : feuille de matchs à imprimer (onglet Matchs), sauvegarde du tournoi dans un fichier (Réglages) et restauration depuis l'accueil.
 - Fiche imprimable avec un QR code par équipe, écran qui alterne terrains et classement (`?vue=alterne`).
 - « Recommencer » sur l'accueil crée un nouveau tournoi avec les mêmes équipes et réglages. Le site peut s'ajouter à l'écran d'accueil du téléphone.
 

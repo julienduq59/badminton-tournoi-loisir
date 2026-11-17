@@ -88,6 +88,26 @@
     rendre();
   });
 
+  // Restauration d'un fichier de sauvegarde : crée un nouveau tournoi identique.
+  document.getElementById('restaurer').addEventListener('change', async (e) => {
+    const fichier = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!fichier) return;
+    try {
+      const donnees = JSON.parse(await fichier.text());
+      const source = donnees && donnees.tournoi;
+      if (!source || !Array.isArray(source.equipes) || !Array.isArray(source.matchs) || !source.reglages) throw new Error('format');
+      const t = BT.normaliser(source);
+      t.id = BT.uid(10);
+      t.cree = Date.now();
+      if (!confirm('Restaurer « ' + t.nom + ' » (' + t.equipes.length + ' équipes, ' + t.matchs.length + ' matchs) ? Il sera ajouté à tes tournois.')) return;
+      await D.creer(t);
+      location.href = 'tournoi.html?t=' + encodeURIComponent(t.id);
+    } catch (err) {
+      alert(err && err.message === 'format' ? 'Ce fichier n’est pas une sauvegarde de tournoi.' : 'Restauration impossible. ' + (err && err.message ? err.message : ''));
+    }
+  });
+
   window.addEventListener('storage', rendre);
   rendre();
 })();
