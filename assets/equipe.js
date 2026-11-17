@@ -113,7 +113,7 @@
 
   // Lien discret vers la gestion du tournoi, quand les organisateurs ont mis un mot de passe.
   function lienOrganisateur() {
-    return D.enLigne && t.acces
+    return D.enLigne && BT.listeAcces(t).length
       ? '<p class="note acces-orga"><a href="tournoi.html?t=' + encodeURIComponent(t.id) + '">Accès organisateur</a></p>'
       : '';
   }

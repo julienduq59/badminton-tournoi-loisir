@@ -348,22 +348,33 @@
     // Dernière version connue du tournoi sur cet appareil (copie gardée à chaque mise à jour).
     lireCopie: (id) => BT.normaliser(lireJSON(cleTournoi(id))),
     cleOrganisateur: (id) => (registre.trouver(id) || {}).cle || null,
-    // Mot de passe retenu sur cet appareil, appliqué aux tournois qu'il crée ensuite (mode en ligne).
-    motDePasseRetenu() {
-      try { return localStorage.getItem('badminton:mdp-defaut') || ''; } catch (e) { return ''; }
-    },
-    retenirMotDePasse(motDePasse) {
+    // Mots de passe retenus sur cet appareil, posés sur chaque tournoi qu'il crée ensuite (mode en ligne).
+    // [{ nom, mdp }] ; l'ancien format (un seul mot de passe en texte) est accepté.
+    motsDePasseRetenus() {
+      let brut = '';
+      try { brut = localStorage.getItem('badminton:mdp-defaut') || ''; } catch (e) { return []; }
+      if (!brut) return [];
       try {
-        if (motDePasse) localStorage.setItem('badminton:mdp-defaut', motDePasse);
-        else localStorage.removeItem('badminton:mdp-defaut');
-      } catch (e) { /* stockage indisponible */ }
+        const liste = JSON.parse(brut);
+        if (Array.isArray(liste)) return liste.filter((x) => x && x.mdp);
+      } catch (e) { /* ancien format */ }
+      return [{ nom: '', mdp: brut }];
+    },
+    retenirMotDePasse(nom, motDePasse) {
+      const liste = this.motsDePasseRetenus().filter((x) => (x.nom || '').toLowerCase() !== (nom || '').toLowerCase());
+      liste.push({ nom: nom || '', mdp: motDePasse });
+      try { localStorage.setItem('badminton:mdp-defaut', JSON.stringify(liste)); } catch (e) { /* stockage indisponible */ }
+    },
+    oublierMotsDePasse() {
+      try { localStorage.removeItem('badminton:mdp-defaut'); } catch (e) { /* stockage indisponible */ }
     },
     async appliquerMotDePasseRetenu(id) {
-      const motDePasse = this.motDePasseRetenu();
+      const liste = this.motsDePasseRetenus();
       const cle = this.cleOrganisateur(id);
-      if (!this.enLigne || !motDePasse || !cle) return false;
-      const acces = await BT.chiffrerCle(cle, motDePasse);
-      await this.modifier(id, (t) => { t.acces = acces; });
+      if (!this.enLigne || !liste.length || !cle) return false;
+      const chiffres = [];
+      for (const x of liste) chiffres.push({ nom: x.nom || '', chiffre: await BT.chiffrerCle(cle, x.mdp) });
+      await this.modifier(id, (t) => { chiffres.forEach((x) => BT.poserAcces(t, x.nom, x.chiffre)); });
       return true;
     },
   });

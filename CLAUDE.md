@@ -70,14 +70,15 @@ commandes, commits et textes du site.
   (`#regles`), affiché juste après la création des matchs, imprimable. Téléphone : vue `#regles`, montrée
   à l'ouverture tant que ce téléphone n'a pas lu la version actuelle (`empreinteRegles`, clé locale
   `badminton:regles:<id>`), bouton « Règles » dans la barre.
-- Mot de passe organisateur (mode en ligne) : `t.acces = { sel, iv, chiffre }` = clé organisateur chiffrée
-  avec le mot de passe (PBKDF2 200 000 tours puis AES-GCM, `chiffrerCle` / `dechiffrerCle`), au moins
-  3 caractères, sans tenir compte des majuscules. Jamais écrit dans le dépôt (public). Défini,
-  changé ou supprimé dans l'onglet QR code ; saisi sur `tournoi.html` par un appareil non organisateur
-  (lien « Accès organisateur » en bas de la page des équipes). Aucune règle Firebase à changer. Retiré
-  à la restauration d'une sauvegarde (nouvelle clé). Option « mes prochains tournois » : mot de passe
-  retenu sur l'appareil (`badminton:mdp-defaut`) et posé sur chaque tournoi qu'il crée
-  (`appliquerMotDePasseRetenu` : création, Recommencer, restauration).
+- Mots de passe organisateurs (mode en ligne) : un par organisateur, `t.acces = { <id>: { nom, sel, iv, chiffre } }`
+  (ancien format `{ sel, iv, chiffre }` encore lu par `listeAcces`) ; chacun chiffre la même clé
+  organisateur (PBKDF2 200 000 tours puis AES-GCM, `chiffrerCle`, `poserAcces` remplace à nom égal,
+  `retirerAcces`, `ouvrirAcces` essaie chaque mot de passe). Au moins 3 caractères, sans tenir compte des
+  majuscules. Jamais écrits dans le dépôt (public). Gérés dans l'onglet QR code ; saisis sur `tournoi.html`
+  par un appareil non organisateur (lien « Accès organisateur » en bas de la page des équipes). Aucune
+  règle Firebase à changer. Retirés à la restauration d'une sauvegarde (nouvelle clé). Option « mes
+  prochains tournois » : liste `[{ nom, mdp }]` retenue sur l'appareil (`badminton:mdp-defaut`) et posée
+  sur chaque tournoi qu'il crée (`appliquerMotDePasseRetenu` : création, Recommencer, restauration).
 - Sauvegarde : fichier JSON `{ format: 'badminton-tournoi-loisir', version, date, tournoi }`
   (Réglages), restauré depuis l'accueil comme un nouveau tournoi (nouvel identifiant).
 - `t.pause` suspend l'appel automatique (`appelAutoActif`), `t.annonce` est le message affiché

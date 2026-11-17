@@ -1199,6 +1199,11 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .acces-mdp { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--bord); display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .acces-mdp label { font-weight: 650; }
 #form-mdp { margin-top: 4px; display: grid; gap: 10px; }
+.liste-mdp { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.liste-mdp li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 6px 6px 12px; border-radius: var(--rayon-petit); background: var(--vert-50); font-weight: 650; }
+.grille-mdp { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; }
+.grille-mdp input { min-width: 0; min-height: 42px; padding: 6px 12px; border: 1px solid var(--bord); border-radius: var(--rayon-petit); background: #fff; }
+@media (max-width: 560px) { .grille-mdp { grid-template-columns: minmax(0, 1fr); } }
 .lien-bouton { padding: 0; border: 0; background: none; color: var(--vert-700); font: inherit; font-weight: 650; text-decoration: underline; cursor: pointer; }
 .acces-orga { margin-top: 18px; text-align: center; }
 .bouton-regles { margin-left: auto; flex: none; background: rgba(255, 255, 255, .12); color: #fff; border-color: rgba(255, 255, 255, .35); }

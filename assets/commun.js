@@ -1551,7 +1551,7 @@
 
   /* ---------- Mot de passe organisateur ----------
      La clé organisateur du tournoi est chiffrée avec le mot de passe (PBKDF2 puis AES-GCM) et
-     rangée dans le tournoi (t.acces). Un appareil qui connaît le mot de passe retrouve la clé et
+     rangée dans le tournoi (t.acces, un mot de passe par organisateur). Un appareil qui connaît un mot de passe retrouve la clé et
      devient organisateur comme avec le lien organisateur. */
 
   const enBase64 = (octets) => btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(octets))));
@@ -1589,6 +1589,39 @@
       } catch (e) { /* essai suivant */ }
     }
     return null;
+  }
+
+  // Mots de passe du tournoi : [{ id, nom, sel, iv, chiffre }] (ancien format à un seul mot de passe accepté).
+  function listeAcces(t) {
+    const a = t && t.acces;
+    if (!a || typeof a !== 'object') return [];
+    if (a.sel) return [Object.assign({ id: 'principal', nom: '' }, a)];
+    return Object.keys(a).filter((k) => a[k] && a[k].sel).map((k) => Object.assign({ nom: '' }, a[k], { id: k }));
+  }
+
+  // Essaie le mot de passe sur chaque accès : { cle, nom } si l'un d'eux s'ouvre, sinon null.
+  async function ouvrirAcces(t, motDePasse) {
+    for (const a of listeAcces(t)) {
+      const cle = await dechiffrerCle(a, motDePasse);
+      if (cle) return { cle, nom: a.nom || '' };
+    }
+    return null;
+  }
+
+  // Ajoute (ou remplace, à nom égal) un mot de passe organisateur dans le tournoi.
+  function poserAcces(t, nom, chiffre) {
+    const liste = listeAcces(t).filter((a) => !nom || (a.nom || '').toLowerCase() !== nom.toLowerCase());
+    const acces = {};
+    liste.forEach((a) => { acces[a.id === 'principal' ? 'a' + uid(6) : a.id] = { nom: a.nom || '', sel: a.sel, iv: a.iv, chiffre: a.chiffre }; });
+    acces['a' + uid(6)] = Object.assign({ nom: nom || '' }, chiffre);
+    t.acces = acces;
+  }
+
+  function retirerAcces(t, idAcces) {
+    const acces = {};
+    listeAcces(t).filter((a) => a.id !== idAcces).forEach((a) => { acces[a.id] = { nom: a.nom || '', sel: a.sel, iv: a.iv, chiffre: a.chiffre }; });
+    if (Object.keys(acces).length) t.acces = acces;
+    else delete t.acces;
   }
 
   /* ---------- Affichage ---------- */
@@ -1670,7 +1703,7 @@
     etiquetteMatch, formatMatch, classementPoules, classementFinal, tableauHtml,
     setsPour, placeEquipe, statsEquipe, statsTournoi,
     classement, nulsPossibles, podiumHtml, signe,
-    lireSaisie, memesSets, enTableau, normaliser, reglesTournoi, reglesHtml, empreinteRegles, chiffrerCle, dechiffrerCle,
+    lireSaisie, memesSets, enTableau, normaliser, reglesTournoi, reglesHtml, empreinteRegles, chiffrerCle, dechiffrerCle, listeAcces, ouvrirAcces, poserAcces, retirerAcces,
     urlPage, qrSvg, heure, idDansAdresse, ICONE, activerSon, sonActif, bip,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

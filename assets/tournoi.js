@@ -655,9 +655,11 @@
 
   async function enregistrerMotDePasse(form) {
     const champ = $('#mdp-nouveau');
+    const champNom = $('#mdp-nom');
     const msg = $('#mdp-message');
     const bouton = form.querySelector('[type="submit"]');
     const motDePasse = champ.value.trim();
+    const nomAcces = champNom.value.trim().slice(0, 30);
     msg.hidden = true;
     if (motDePasse.length < 3) {
       msg.textContent = 'Choisis au moins 3 caractères.';
@@ -672,12 +674,13 @@
     }
     bouton.disabled = true;
     try {
-      const acces = await BT.chiffrerCle(cle, motDePasse);
-      const ok = await agir((tt) => { tt.acces = acces; return true; });
+      const chiffre = await BT.chiffrerCle(cle, motDePasse);
+      const ok = await agir((tt) => { BT.poserAcces(tt, nomAcces, chiffre); return true; });
       champ.value = '';
+      champNom.value = '';
       if (ok) {
-        D.retenirMotDePasse($('#mdp-retenir') && $('#mdp-retenir').checked ? motDePasse : '');
-        toast('Mot de passe enregistré. Donne-le seulement aux organisateurs.');
+        if ($('#mdp-retenir') && $('#mdp-retenir').checked) D.retenirMotDePasse(nomAcces, motDePasse);
+        toast('Mot de passe enregistré' + (nomAcces ? ' pour ' + nomAcces : '') + '. Donne-le seulement aux organisateurs.');
       }
     } catch (e) {
       msg.textContent = 'Enregistrement impossible sur ce navigateur.';
@@ -704,7 +707,8 @@
       erreur.hidden = true;
       bouton.disabled = true;
       bouton.textContent = 'Vérification';
-      const cle = await BT.dechiffrerCle(zone.acces || acces, $('#mdp-acces').value.trim());
+      const ouvert = await BT.ouvrirAcces({ acces: zone.acces || acces }, $('#mdp-acces').value.trim());
+      const cle = ouvert && ouvert.cle;
       if (!cle) {
         erreur.textContent = 'Mot de passe incorrect.';
         erreur.hidden = false;
@@ -751,8 +755,8 @@
   function rendrePartager() {
     const el = $('#partager');
     if (el.querySelector('details[open]')) return;
-    const champMdp = $('#mdp-nouveau');
-    if (champMdp && (document.activeElement === champMdp || champMdp.value)) return;
+    const enSaisie = ['#mdp-nouveau', '#mdp-nom'].map((x) => $(x)).some((c) => c && (document.activeElement === c || c.value));
+    if (enSaisie) return;
     const urlEquipes = BT.urlPage('equipe.html', { t: t.id });
     const urlEcran = (vue) => 'ecran.html?t=' + encodeURIComponent(t.id) + (vue ? '&vue=' + vue : '');
     let h = '<div class="carte"><div class="qr-carte"><div class="qr">' + BT.qrSvg(urlEquipes) + '</div><div>'
@@ -776,17 +780,25 @@
         + '<p class="lien-texte">' + esc(urlOrga) + '</p>'
         + '<div class="actions"><button type="button" class="bouton" data-action="copier" data-texte="' + esc(urlOrga) + '">Copier le lien organisateur</button></div>'
         + '</div></div></details></div>';
-      h += '<div class="carte pas-imprimer" style="margin-top:16px" id="carte-mdp"><h2>Mot de passe organisateur</h2>'
-        + '<p>' + (t.acces ? '<strong>Un mot de passe est défini.</strong> ' : '')
-        + 'Avec ce mot de passe, un autre organisateur peut gérer le tournoi depuis son téléphone, sans le lien organisateur. '
-        + 'Il ouvre la page des équipes, touche « Accès organisateur » en bas de page, puis entre le mot de passe.</p>'
-        + '<form id="form-mdp" novalidate><div class="annonce-ligne"><input type="password" id="mdp-nouveau" maxlength="64" autocomplete="new-password" autocapitalize="none" placeholder="Au moins 3 caractères" aria-label="Mot de passe organisateur">'
-        + '<button type="submit" class="bouton principal">' + (t.acces ? 'Changer' : 'Enregistrer') + '</button></div>'
+      const accesListe = BT.listeAcces(t).sort((x, y) => (x.nom || '').localeCompare(y.nom || '', 'fr'));
+      const retenus = D.motsDePasseRetenus();
+      h += '<div class="carte pas-imprimer" style="margin-top:16px" id="carte-mdp"><h2>Mots de passe organisateurs</h2>'
+        + '<p>Chaque organisateur peut avoir son mot de passe pour gérer le tournoi depuis son téléphone, sans le lien organisateur. '
+        + 'Il ouvre la page des équipes, touche « Accès organisateur » en bas de page, puis entre son mot de passe. Les majuscules ne comptent pas.</p>'
+        + (accesListe.length
+          ? '<ul class="liste-mdp">' + accesListe.map((a) => '<li><span>' + esc(a.nom || 'Sans nom') + '</span>'
+            + '<button type="button" class="bouton petit danger" data-action="mdp-supprimer" data-id="' + esc(a.id) + '" data-nom="' + esc(a.nom || '') + '">Supprimer</button></li>').join('') + '</ul>'
+          : '<p class="note">Aucun mot de passe pour l’instant.</p>')
+        + '<form id="form-mdp" novalidate>'
+        + '<div class="grille-mdp"><input type="text" id="mdp-nom" maxlength="30" autocomplete="off" placeholder="Pour qui, par exemple Grégoire" aria-label="Nom de l’organisateur">'
+        + '<input type="password" id="mdp-nouveau" maxlength="64" autocomplete="new-password" autocapitalize="none" placeholder="Mot de passe, 3 caractères ou plus" aria-label="Mot de passe">'
+        + '<button type="submit" class="bouton principal">Ajouter</button></div>'
         + caseHtml('mdp-retenir', true, 'Le mettre aussi sur mes prochains tournois créés depuis cet appareil') + '</form>'
-        + '<p class="note" style="margin:6px 0 0">Les majuscules ne comptent pas.'
-        + (D.motDePasseRetenu() ? ' Un mot de passe est retenu sur cet appareil pour tes prochains tournois. <button type="button" class="lien-bouton" data-action="mdp-oublier">Ne plus le retenir</button>' : '') + '</p>'
         + '<p class="erreur-champ" id="mdp-message" hidden></p>'
-        + (t.acces ? '<div class="actions" style="margin-top:10px"><button type="button" class="bouton danger" data-action="mdp-supprimer">Supprimer le mot de passe</button></div>' : '')
+        + (retenus.length
+          ? '<p class="note" style="margin:8px 0 0">Retenus sur cet appareil pour tes prochains tournois : ' + esc(retenus.map((x) => x.nom || 'sans nom').join(', ')) + '. '
+            + '<button type="button" class="lien-bouton" data-action="mdp-oublier">Ne plus les retenir</button></p>'
+          : '')
         + '</div>';
     } else {
       h += '<div class="encadre" style="margin-top:16px"><p>La synchronisation en ligne n’est pas encore activée : le tournoi est enregistré dans ce navigateur. '
@@ -1557,15 +1569,18 @@
         }
         break;
       case 'mdp-oublier':
-        D.retenirMotDePasse('');
+        D.oublierMotsDePasse();
         rendrePartager();
         toast('Tes prochains tournois n’auront plus de mot de passe automatiquement.');
         break;
-      case 'mdp-supprimer':
-        if (confirm('Supprimer le mot de passe organisateur ? Les appareils déjà organisateurs le restent.')) {
-          agir((tt) => { delete tt.acces; return true; }).then((r) => { if (r) toast('Mot de passe supprimé.'); });
+      case 'mdp-supprimer': {
+        const idAcces = el.dataset.id;
+        const qui = el.dataset.nom ? ' de ' + el.dataset.nom : '';
+        if (confirm('Supprimer le mot de passe' + qui + ' ? Les appareils déjà organisateurs le restent.')) {
+          agir((tt) => { BT.retirerAcces(tt, idAcces); return true; }).then((r) => { if (r) toast('Mot de passe' + qui + ' supprimé.'); });
         }
         break;
+      }
       case 'imprimer-regles':
         $('#regles').classList.add('imprimer');
         window.print();
