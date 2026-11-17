@@ -98,6 +98,7 @@
       const source = donnees && donnees.tournoi;
       if (!source || !Array.isArray(source.equipes) || !Array.isArray(source.matchs) || !source.reglages) throw new Error('format');
       const t = BT.normaliser(source);
+      delete t.acces; // l'ancien mot de passe protégeait la clé de l'ancien tournoi
       t.id = BT.uid(10);
       t.cree = Date.now();
       if (!confirm('Restaurer « ' + t.nom + ' » (' + t.equipes.length + ' équipes, ' + t.matchs.length + ' matchs) ? Il sera ajouté à tes tournois.')) return;

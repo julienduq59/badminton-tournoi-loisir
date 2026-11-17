@@ -27,6 +27,10 @@
     validationAuto: false,
     dureeLimite: 0,
     reposMin: 0,              // minutes de repos minimum entre deux matchs d'une équipe
+    dureePrevue: 0,           // durée moyenne prévue d'un match (minutes), pour estimer l'heure de fin
+    heureDebut: '',           // heure de début prévue (HH:MM)
+    heureFin: '',             // heure à laquelle il faut rendre la salle (HH:MM)
+    reglesPerso: '',          // règles ajoutées par les organisateurs, affichées avec les règles du tournoi
     // Déroulement : une seule poule (championnat) ou plusieurs poules, puis phase finale éventuelle.
     format: 'championnat',
     nbPoules: 3,
@@ -367,10 +371,35 @@
     return t.matchs.filter((m) => m.statut === 'attente').sort(parOrdre);
   }
 
+  // Terrains fermés pour un moment (filet cassé, salle partagée…) : plus aucun match n'y est appelé.
+  function terrainsFermes(t) {
+    return enTableau(t.fermes).map(Number).filter((n) => n >= 1 && n <= t.reglages.terrains);
+  }
+
+  function terrainFerme(t, n) {
+    return terrainsFermes(t).includes(Number(n));
+  }
+
+  function nbTerrainsOuverts(t) {
+    return Math.max(0, t.reglages.terrains - terrainsFermes(t).length);
+  }
+
+  function fermerTerrain(t, n) {
+    const liste = terrainsFermes(t).filter((x) => x !== Number(n));
+    liste.push(Number(n));
+    t.fermes = liste.sort((a, b) => a - b);
+  }
+
+  function ouvrirTerrain(t, n) {
+    t.fermes = terrainsFermes(t).filter((x) => x !== Number(n));
+    if (!t.fermes.length) delete t.fermes;
+  }
+
   function terrainsLibres(t) {
     const pris = new Set(matchsEnCours(t).map((m) => m.terrain));
+    const fermes = new Set(terrainsFermes(t));
     const libres = [];
-    for (let i = 1; i <= t.reglages.terrains; i++) if (!pris.has(i)) libres.push(i);
+    for (let i = 1; i <= t.reglages.terrains; i++) if (!pris.has(i) && !fermes.has(i)) libres.push(i);
     return libres;
   }
 
@@ -432,7 +461,7 @@
   // Calcul gardé en mémoire tant que l'état des matchs ne change pas.
   const cacheNumeros = new WeakMap();
   function numerosPrevus(t) {
-    const empreinte = t.reglages.terrains + '|' + t.matchs.map((m) => m.id + m.statut + (m.numero || '') + m.ordre + (m.priorite ? 'p' : '') + (m.debut || '')).join(',');
+    const empreinte = t.reglages.terrains + '|' + terrainsFermes(t).join('.') + '|' + t.matchs.map((m) => m.id + m.statut + (m.numero || '') + m.ordre + (m.priorite ? 'p' : '') + (m.debut || '')).join(',');
     let entree = cacheNumeros.get(t);
     if (!entree || entree.empreinte !== empreinte) {
       const carte = new Map();
@@ -537,8 +566,10 @@
   // Avec une durée de match (en ms), donne aussi l'heure de début estimée de chacun.
   function planifier(t, duree, maintenant) {
     maintenant = maintenant || Date.now();
+    // Avant le lancement, les heures partent de l'heure de début prévue si elle est à venir.
+    if (!demarre(t)) maintenant = Math.max(maintenant, heureDuJour(t.reglages.heureDebut, maintenant) || 0);
     const D = duree || 0;
-    const T = Math.max(1, t.reglages.terrains);
+    const T = nbTerrainsOuverts(t);
     const enJeu = t.matchs.filter((m) => m.statut === 'en_cours')
       .sort((x, y) => (x.debut || 0) - (y.debut || 0))
       .map((m) => ({ m, fin: Math.max(maintenant, (m.debut || maintenant) + D) }));
@@ -605,8 +636,52 @@
       .filter((d) => d >= 60 * 1000 && d <= 3 * 3600 * 1000)
       .sort((a, b) => a - b);
     if (durees.length >= 3) return durees[Math.floor(durees.length / 2)];
-    if (t.reglages.dureeLimite > 0) return t.reglages.dureeLimite * 60 * 1000;
+    return dureeReglee(t.reglages);
+  }
+
+  // Durée d'un match d'après les réglages : la durée prévue, sinon la durée maximum (ms ou null).
+  function dureeReglee(r) {
+    if (Number(r.dureePrevue) > 0) return r.dureePrevue * 60 * 1000;
+    if (Number(r.dureeLimite) > 0) return r.dureeLimite * 60 * 1000;
     return null;
+  }
+
+  /* ---------- Horaires ---------- */
+
+  // « 14:30 » → horodatage de ce jour-là (jour de « ref »), ou null.
+  function heureDuJour(hhmm, ref) {
+    const x = /^(\d{1,2}):(\d{2})$/.exec(hhmm || '');
+    if (!x || Number(x[1]) > 23 || Number(x[2]) > 59) return null;
+    const d = new Date(ref || Date.now());
+    d.setHours(Number(x[1]), Number(x[2]), 0, 0);
+    return d.getTime();
+  }
+
+  // Heure à laquelle il faut rendre la salle, le jour de « ref » (le lendemain si elle est avant le début).
+  function heureFinSalle(t, ref) {
+    const fin = heureDuJour(t.reglages.heureFin, ref);
+    if (fin === null) return null;
+    const debut = heureDuJour(t.reglages.heureDebut, ref);
+    return debut !== null && fin <= debut ? fin + 24 * 3600 * 1000 : fin;
+  }
+
+  // Durée estimée (ms) d'un tournoi pas encore commencé, phase finale comprise, avec des matchs de D ms.
+  function dureeEstimee(t, D) {
+    if (!D || !t.matchs.length) return null;
+    const base = Date.UTC(2000, 0, 3, 8);
+    const copie = Object.assign({}, t, { reglages: Object.assign({}, t.reglages, { heureDebut: '' }) });
+    let fin = base;
+    planifier(copie, D, base).forEach((x) => { if (x.heure) fin = Math.max(fin, x.heure + D); });
+    const T = Math.max(1, nbTerrainsOuverts(t));
+    toursFinaleRestants(t).forEach((n) => { fin += Math.ceil(n / T) * D; });
+    return fin - base;
+  }
+
+  // Minutes de dépassement de l'heure de fin de la salle (0 si ça tient), ou null si on ne sait pas.
+  function depassementSalle(t, fin, ref) {
+    const limite = heureFinSalle(t, ref);
+    if (!fin || limite === null) return null;
+    return Math.max(0, Math.ceil((fin - limite) / 60000));
   }
 
   // Heure de fin estimée du tournoi, ou null.
@@ -617,7 +692,7 @@
     let fin = maintenant;
     t.matchs.forEach((m) => { if (m.statut === 'en_cours') fin = Math.max(fin, (m.debut || maintenant) + D); });
     planifier(t, D, maintenant).forEach((x) => { if (x.heure) fin = Math.max(fin, x.heure + D); });
-    const T = Math.max(1, t.reglages.terrains);
+    const T = Math.max(1, nbTerrainsOuverts(t));
     toursFinaleRestants(t).forEach((n) => { fin += Math.ceil(n / T) * D; });
     return fin;
   }
@@ -1320,6 +1395,9 @@
     t.matchs = enTableau(t.matchs).map((m) => Object.assign({ terrain: null, debut: null, fin: null }, m, {
       sets: enTableau(m.sets).map((paire) => enTableau(paire).map(Number)),
     }));
+    const fermes = enTableau(t.fermes).map(Number).filter((n) => n >= 1 && n <= t.reglages.terrains);
+    if (fermes.length) t.fermes = fermes;
+    else delete t.fermes;
     if (t.finale && t.finale.taille) {
       const brut = t.finale.places || {};
       t.finale = { taille: Number(t.finale.taille), places: Array.from({ length: Number(t.finale.taille) }, (_, i) => brut[i] || '') };
@@ -1327,6 +1405,155 @@
       delete t.finale;
     }
     return t;
+  }
+
+  /* ---------- Règles du tournoi (écrites à partir des réglages) ---------- */
+
+  const listeEt = (l) => (l.length > 1 ? l.slice(0, -1).join(', ') + ' et ' + l[l.length - 1] : l[0] || '');
+
+  // « 1 set de 15 points », « 2 sets gagnants de 21 points (au meilleur des 3) »…
+  function formatEnMots(reg) {
+    const n = reg.sets;
+    if (n === 1) return '1 set de ' + reg.points + ' points';
+    if (reg.auMeilleur && n % 2 === 1) return (n + 1) / 2 + ' sets gagnants de ' + reg.points + ' points (au meilleur des ' + n + ')';
+    return n + ' sets de ' + reg.points + ' points, tous joués';
+  }
+
+  // Règles du tournoi : [{ titre, lignes: [texte, ...] }]. Rien d'autre que ce que le site applique.
+  function reglesTournoi(t) {
+    const r = t.reglages;
+    const n = t.equipes.length;
+    const poules = avecPoules(t);
+    const sections = [];
+
+    // Déroulement
+    const der = [];
+    if (poules) {
+      const tailles = Array.from(new Set(taillesPoules(n, r.nbPoules))).sort((a, b) => b - a);
+      der.push(n + ' équipes réparties en ' + r.nbPoules + ' poules de ' + listeEt(tailles.map(String)) + ' équipes.');
+    } else {
+      der.push(n + ' équipes, toutes dans la même poule.');
+    }
+    const cats = categoriesJouees(r);
+    const morceaux = cats.map((c) => (c.tous
+      ? 'un ' + c.nom.toLowerCase() + ' contre chaque autre équipe' + (poules ? ' de sa poule' : '')
+      : c.k + ' ' + (c.k > 1 ? c.pluriel : c.nom.toLowerCase())));
+    if (morceaux.length) der.push('Chaque équipe joue ' + listeEt(morceaux) + '.');
+    if (r.mixteEgalDouble && cats.some((c) => c.cle === 'double')) der.push('Pas de différence entre double et mixte.');
+    const Q = nbQualifies(t);
+    if (Q >= 2) {
+      let S = 2;
+      while (S < Q) S *= 2;
+      const titre = ['la finale', 'les demi-finales', 'les quarts de finale', 'les huitièmes de finale', 'les seizièmes de finale'][Math.round(Math.log2(S)) - 1] || 'un tableau de ' + S;
+      const q = r.qualifiesParPoule;
+      der.push((poules
+        ? (q === 1 ? 'Le premier de chaque poule' : 'Les ' + q + ' premiers de chaque poule')
+        : 'Les ' + Q + ' premiers du classement')
+        + (S === 2 ? ' jouent la finale.' : ' jouent une phase finale à élimination directe, à partir des ' + titre.replace(/^les /, '') + '.'));
+      if (S > Q) der.push('Les ' + (S - Q) + ' équipes les mieux classées passent directement au tour suivant.');
+      if (r.petiteFinale && S >= 4) der.push('Les perdants des demi-finales jouent un match pour la 3e place.');
+      if (cats.length >= 2) der.push('Les matchs de phase finale se jouent en ' + nomCategorie(categorieFinale(r)).toLowerCase() + '.');
+      der.push('En phase finale, chaque match doit avoir un vainqueur.');
+    } else {
+      der.push(poules ? 'Pas de phase finale, le classement de chaque poule est le résultat final.' : 'Pas de phase finale, le classement du championnat est le classement final.');
+    }
+    sections.push({ titre: 'Déroulement', lignes: der });
+
+    // Matchs
+    const mat = ['Chaque match se joue en ' + formatEnMots(r) + '.'];
+    if (r.sets > 1 && r.sets % 2 === 0) mat.push('Un match peut finir à égalité.');
+    if (r.ecart2) {
+      mat.push(r.plafond > r.points
+        ? 'Il faut 2 points d’écart pour gagner un set, jusqu’à ' + r.plafond + ' points au maximum (à ' + (r.plafond - 1) + ' partout, le point suivant gagne le set).'
+        : 'Il faut 2 points d’écart pour gagner un set.');
+    } else {
+      mat.push('La première équipe à ' + r.points + ' points gagne le set, sans écart obligatoire.');
+    }
+    if (r.dureeLimite > 0) mat.push('Un match dure ' + r.dureeLimite + ' minutes au maximum. Quand le temps est écoulé, le score atteint à ce moment-là compte.');
+    if (Q >= 2 && r.formatFinale) {
+      mat.push('En phase finale, les matchs se jouent en ' + formatEnMots({ sets: r.finaleSets, auMeilleur: r.finaleAuMeilleur, points: r.finalePoints }) + ', ' + (r.ecart2 ? 'avec 2 points d’écart (maximum ' + plafondAuto(r.finalePoints) + ')' : 'sans écart obligatoire') + ' et sans durée maximum.');
+    }
+    if (r.reposMin > 0) mat.push('Chaque équipe a au moins ' + r.reposMin + ' minute' + (r.reposMin > 1 ? 's' : '') + ' de repos entre deux matchs.');
+    sections.push({ titre: 'Matchs', lignes: mat });
+
+    // Appel des matchs
+    const app = [];
+    if (heureDuJour(r.heureDebut) !== null) app.push('Début du tournoi à ' + r.heureDebut + '.');
+    app.push(r.appelAuto
+      ? 'Les matchs sont appelés au fur et à mesure que les terrains se libèrent. Chaque match a un numéro.'
+      : 'Les organisateurs appellent les matchs au fur et à mesure que les terrains se libèrent. Chaque match a un numéro.');
+    app.push('Les équipes qui ont le moins joué passent en premier, et une équipe ne joue qu’un match à la fois.');
+    app.push('Quand ton match est appelé, il s’affiche sur l’écran de la salle et sur ton téléphone, avec le numéro du terrain.');
+    sections.push({ titre: 'Appel des matchs', lignes: app });
+
+    // Scores et forfaits
+    const sco = [];
+    if (r.scoresJoueurs) {
+      sco.push('À la fin du match, envoie le score depuis ton téléphone. Un organisateur le valide ensuite.');
+      if (r.validationAuto) sco.push('Si les deux équipes envoient le même score, il est validé tout seul.');
+    } else {
+      sco.push('À la fin du match, donne le score à un organisateur.');
+    }
+    sco.push('Une équipe absente peut perdre par forfait. Le match compte alors ' + setsForfait(r, true).map(([a, b]) => a + '-' + b).join(', ') + ' pour l’adversaire.');
+    sections.push({ titre: 'Scores', lignes: sco });
+
+    // Classement
+    const cla = [(poules ? 'Dans chaque poule, le classement se fait au nombre de victoires' : 'Le classement se fait au nombre de victoires')
+      + (nulsPossibles(t) ? ', un match nul comptant pour une demi-victoire.' : '.')];
+    cla.push('Si deux équipes sont à égalité, le match qu’elles ont joué l’une contre l’autre les départage. Sinon, on regarde la différence de sets, puis la différence de points, puis le nombre de points marqués.');
+    sections.push({ titre: 'Classement', lignes: cla });
+
+    const perso = String(r.reglesPerso || '').split('\n').map((x) => x.trim()).filter(Boolean);
+    if (perso.length) sections.push({ titre: 'Règles des organisateurs', lignes: perso });
+    return sections;
+  }
+
+  function reglesHtml(t) {
+    return '<div class="regles-liste">' + reglesTournoi(t).map((s) => '<section class="regles-bloc"><h3>' + esc(s.titre) + '</h3><ul>'
+      + s.lignes.map((l) => '<li>' + esc(l) + '</li>').join('') + '</ul></section>').join('') + '</div>';
+  }
+
+  // Empreinte des règles, pour savoir si un téléphone a déjà lu la version actuelle.
+  function empreinteRegles(t) {
+    const texte = JSON.stringify(reglesTournoi(t));
+    let h = 5381;
+    for (let i = 0; i < texte.length; i++) h = ((h * 33) ^ texte.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+
+  /* ---------- Mot de passe organisateur ----------
+     La clé organisateur du tournoi est chiffrée avec le mot de passe (PBKDF2 puis AES-GCM) et
+     rangée dans le tournoi (t.acces). Un appareil qui connaît le mot de passe retrouve la clé et
+     devient organisateur comme avec le lien organisateur. */
+
+  const enBase64 = (octets) => btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(octets))));
+  const depuisBase64 = (texte) => Uint8Array.from(atob(texte), (c) => c.charCodeAt(0));
+
+  async function cleDuMotDePasse(motDePasse, sel) {
+    const sub = globalThis.crypto.subtle;
+    const base = await sub.importKey('raw', new TextEncoder().encode(motDePasse), 'PBKDF2', false, ['deriveKey']);
+    return sub.deriveKey({ name: 'PBKDF2', salt: sel, iterations: 200000, hash: 'SHA-256' },
+      base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+
+  async function chiffrerCle(cle, motDePasse) {
+    const sel = globalThis.crypto.getRandomValues(new Uint8Array(16));
+    const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+    const k = await cleDuMotDePasse(motDePasse, sel);
+    const chiffre = await globalThis.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, k, new TextEncoder().encode(cle));
+    return { sel: enBase64(sel), iv: enBase64(iv), chiffre: enBase64(chiffre) };
+  }
+
+  // Clé organisateur si le mot de passe est le bon, sinon null.
+  async function dechiffrerCle(acces, motDePasse) {
+    if (!acces || !acces.sel || !acces.iv || !acces.chiffre) return null;
+    try {
+      const k = await cleDuMotDePasse(motDePasse, depuisBase64(acces.sel));
+      const clair = await globalThis.crypto.subtle.decrypt({ name: 'AES-GCM', iv: depuisBase64(acces.iv) }, k, depuisBase64(acces.chiffre));
+      return new TextDecoder().decode(clair);
+    } catch (e) {
+      return null;
+    }
   }
 
   /* ---------- Affichage ---------- */
@@ -1397,9 +1624,9 @@
     uid, esc, entier,
     nouveauTournoi, ajusterEquipes, equipe, nomEquipe, statut, texteFormat,
     verifierFormat, paires, ordonner, genererMatchs,
-    matchsEnCours, matchsEnAttente, terrainsLibres, remplirTerrains, lancer, demarre, prochains, reporter, appelAutoActif,
+    matchsEnCours, matchsEnAttente, terrainsLibres, terrainsFermes, terrainFerme, nbTerrainsOuverts, fermerTerrain, ouvrirTerrain, remplirTerrains, lancer, demarre, prochains, reporter, appelAutoActif,
     numero, numeroActuel, attenteRepos,
-    planifier, dureeMatch, finEstimee, prioriser,
+    planifier, dureeMatch, dureeReglee, finEstimee, dureeEstimee, heureDuJour, heureFinSalle, depassementSalle, prioriser,
     resultat, texteScore, verifierSet, verifierScore, enregistrerScore,
     setsForfait, enregistrerForfait, abandonEquipe, annulerAbandon, effacerResultat,
     nomPoule, avecPoules, listePoules, taillesPoules, verifierPoules, verifierDeroulement,
@@ -1408,7 +1635,7 @@
     etiquetteMatch, formatMatch, classementPoules, classementFinal, tableauHtml,
     setsPour, placeEquipe, statsEquipe, statsTournoi,
     classement, nulsPossibles, podiumHtml, signe,
-    lireSaisie, memesSets, enTableau, normaliser,
+    lireSaisie, memesSets, enTableau, normaliser, reglesTournoi, reglesHtml, empreinteRegles, chiffrerCle, dechiffrerCle,
     urlPage, qrSvg, heure, idDansAdresse, ICONE, activerSon, sonActif, bip,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

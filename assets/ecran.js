@@ -59,8 +59,8 @@
         const tete = '<div class="e-terrain-tete"><div class="e-terrain-num"><small>Terrain</small>' + num + '</div>'
           + (m ? '<div class="e-terrain-match">Match ' + BT.numero(t, m) + '</div>' : '') + '</div>';
         if (!m) {
-          return '<article class="e-terrain">' + tete + '<div class="e-court e-court--libre"><div class="e-court-libre">'
-            + (st === 'pret' ? 'Bientôt' : BT.attenteRepos(t) > 0 && BT.appelAutoActif(t) ? 'Repos, reprise dans ' + Math.max(1, Math.ceil(BT.attenteRepos(t) / 60000)) + ' min' : 'Libre') + '</div></div></article>';
+          return '<article class="e-terrain' + (BT.terrainFerme(t, num) ? ' e-terrain--ferme' : '') + '">' + tete + '<div class="e-court e-court--libre"><div class="e-court-libre">'
+            + (BT.terrainFerme(t, num) ? 'Fermé' : st === 'pret' ? 'Bientôt' : BT.attenteRepos(t) > 0 && BT.appelAutoActif(t) ? 'Repos, reprise dans ' + Math.max(1, Math.ceil(BT.attenteRepos(t) / 60000)) + ' min' : 'Libre') + '</div></div></article>';
         }
         return '<article class="e-terrain' + (appel ? ' e-terrain--appel' : '') + '">' + tete + '<div class="e-court">'
           + '<div class="e-court-cote">' + nomComplet(m.a) + '</div><div class="e-court-filet"></div>'

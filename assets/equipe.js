@@ -47,10 +47,20 @@
   }
 
   // Vue affichée : l'équipe, le classement en direct ou le récap à télécharger.
-  const VUES = ['equipe', 'classement', 'recap', 'partager'];
+  const VUES = ['equipe', 'classement', 'recap', 'partager', 'regles'];
   let vue = VUES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'equipe';
   let recap = null; // { url, blob, nom } de la dernière image créée
   let partageEquipe = false; // QR code de l'équipe (pour un partenaire) plutôt que celui du tournoi
+  // Règles : affichées d'abord tant que ce téléphone n'a pas lu leur version actuelle.
+  const cleRegles = 'badminton:regles:' + id;
+  let reglesAuto = !location.hash; // seulement à l'ouverture, sans vue demandée dans l'adresse
+  let reglesChangees = false;
+  function reglesLues() {
+    try { return localStorage.getItem(cleRegles); } catch (e) { return null; }
+  }
+  function marquerReglesLues() {
+    try { localStorage.setItem(cleRegles, BT.empreinteRegles(t)); } catch (e) { /* stockage indisponible */ }
+  }
 
   // Formulaire d'envoi du score (conservé quand la page se met à jour).
   let envoi = null; // { matchId, saisie: [[a, b], ...], confirmer, message }
@@ -98,7 +108,14 @@
     contenu.innerHTML = '<h2 style="margin-top:4px">Choisis ton équipe</h2>'
       + '<div class="choix-equipes">'
       + t.equipes.map((e) => '<a href="equipe.html?t=' + encodeURIComponent(t.id) + '&amp;e=' + encodeURIComponent(e.id) + '">' + esc(e.nom) + '</a>').join('')
-      + '</div>';
+      + '</div>' + lienOrganisateur();
+  }
+
+  // Lien discret vers la gestion du tournoi, quand les organisateurs ont mis un mot de passe.
+  function lienOrganisateur() {
+    return D.enLigne && t.acces
+      ? '<p class="note acces-orga"><a href="tournoi.html?t=' + encodeURIComponent(t.id) + '">Accès organisateur</a></p>'
+      : '';
   }
 
   /* ---------- Envoi du score ---------- */
@@ -363,7 +380,8 @@
 
     h += '<div class="actions" style="margin-top:24px"><a class="bouton" href="equipe.html?t=' + encodeURIComponent(t.id) + '" data-changer>Changer d’équipe</a>'
       + '<button type="button" class="bouton" data-vue="partager">Partager le QR code</button></div>'
-      + '<p class="note">' + esc(BT.texteFormat(t.reglages)) + '. Mis à jour à ' + BT.heure(t.maj) + '.</p>';
+      + '<p class="note">' + esc(BT.texteFormat(t.reglages)) + '. Mis à jour à ' + BT.heure(t.maj) + '.</p>'
+      + lienOrganisateur();
     contenu.innerHTML = h;
   }
 
@@ -475,6 +493,19 @@
     genererRecap();
   }
 
+  /* ---------- Règles du tournoi ---------- */
+
+  function vueRegles() {
+    contenu.dataset.regles = BT.empreinteRegles(t);
+    contenu.innerHTML = '<section class="regles">'
+      + '<h2 style="margin-top:4px">Règles du tournoi</h2>'
+      + (reglesChangees ? '<p class="encadre">Les règles ont changé depuis ta dernière visite.</p>' : '')
+      + BT.reglesHtml(t)
+      + '<div class="actions" style="margin-top:18px"><button type="button" class="bouton principal grand" data-action="regles-lues">'
+      + (equipeId ? 'C’est noté, voir mon équipe' : 'C’est noté, choisir mon équipe') + '</button></div>'
+      + '</section>';
+  }
+
   /* ---------- Partager le QR code ---------- */
 
   function lienPartage() {
@@ -550,7 +581,23 @@
     document.getElementById('titre').textContent = t.nom;
     document.title = t.nom + ' · Mon équipe';
     if (equipeId && !t.equipes.some((e) => e.id === equipeId)) equipeId = null;
+    document.getElementById('bouton-regles').hidden = !t.matchs.length;
+    // À l'ouverture : les règles d'abord si ce téléphone ne les a pas encore lues.
+    if (reglesAuto && t.matchs.length) {
+      reglesAuto = false;
+      const lues = reglesLues();
+      if (lues !== BT.empreinteRegles(t)) {
+        reglesChangees = !!lues;
+        vue = 'regles';
+      }
+    }
+    if (vue === 'regles' && !t.matchs.length) vue = 'equipe';
     afficherOnglets();
+    if (vue === 'regles') {
+      if (force || contenu.dataset.regles !== BT.empreinteRegles(t) || !contenu.querySelector('.regles')) vueRegles();
+      return;
+    }
+    delete contenu.dataset.regles;
     if (vue === 'classement') { vueClassement(); return; }
     if (vue === 'partager') {
       // Le QR code ne change pas avec les résultats : pas besoin de le redessiner à chaque mise à jour.
@@ -579,6 +626,11 @@
   }
 
   /* ---------- Événements ---------- */
+
+  document.getElementById('bouton-regles').addEventListener('click', () => {
+    reglesChangees = false;
+    changerVue('regles');
+  });
 
   document.getElementById('onglets-tel').addEventListener('click', (e) => {
     const b = e.target.closest('[data-vue]');
@@ -627,6 +679,11 @@
           const fichier = new File([recap.blob], recap.nom, { type: 'image/png' });
           navigator.share({ files: [fichier], title: t.nom, text: 'Mon récap du tournoi ' + t.nom }).catch(() => {});
         }
+        break;
+      case 'regles-lues':
+        marquerReglesLues();
+        reglesChangees = false;
+        changerVue('equipe');
         break;
       case 'qr-tournoi':
       case 'qr-equipe':

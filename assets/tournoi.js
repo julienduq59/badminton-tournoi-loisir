@@ -4,7 +4,7 @@
   const { esc } = BT;
   const D = BT.Donnees;
   const $ = (s, racine) => (racine || document).querySelector(s);
-  const ONGLETS = ['direct', 'matchs', 'classement', 'reglages', 'partager'];
+  const ONGLETS = ['direct', 'matchs', 'classement', 'reglages', 'regles', 'partager'];
 
   $('#icone').outerHTML = BT.ICONE;
 
@@ -258,6 +258,7 @@
     rendreDirect();
     rendreMatchs();
     rendreClassement();
+    rendreRegles();
     rendrePartager();
     afficherOnglet();
   }
@@ -267,9 +268,51 @@
     const faits = t.matchs.filter((m) => m.statut === 'termine').length;
     const pct = total ? Math.round((faits / total) * 100) : 0;
     const fin = faits < total ? BT.finEstimee(t) : null;
+    const retard = fin ? BT.depassementSalle(t, fin) : null;
     return '<div class="progression"><div class="progression-barre"><span style="width:' + pct + '%"></span></div>'
       + '<span class="progression-texte">' + faits + ' / ' + total + ' matchs joués'
-      + (fin ? '<small>fin estimée vers ' + BT.heure(fin) + '</small>' : '') + '</span></div>';
+      + (fin ? '<small' + (retard ? ' class="fin-retard"' : '') + '>fin estimée vers ' + BT.heure(fin)
+        + (retard ? ', ' + dureeTexte(retard * 60000) + ' après la fin de la salle (' + esc(t.reglages.heureFin) + ')' : '') + '</small>' : '')
+      + '</span></div>';
+  }
+
+  // 150 minutes → « 2 h 30 », 45 minutes → « 45 min ».
+  function dureeTexte(ms) {
+    const m = Math.max(1, Math.round(ms / 60000));
+    if (m < 60) return m + ' min';
+    return Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + String(m % 60).padStart(2, '0') : '');
+  }
+
+  // Estimation des horaires d'un tournoi pas encore commencé (réglages et carte « Tout est prêt »).
+  function texteHoraires(tt) {
+    const r = tt.reglages;
+    const D = BT.dureeReglee(r);
+    if (!D) {
+      return r.heureFin
+        ? '<p>Indique la durée moyenne prévue d’un match pour savoir si le tournoi tient avant la fin de la salle.</p>'
+        : '';
+    }
+    const duree = BT.dureeEstimee(tt, D);
+    if (!duree) return '';
+    let h = '<p>Avec des matchs de ' + Math.round(D / 60000) + ' min' + (r.reposMin ? ' et ' + r.reposMin + ' min de repos' : '')
+      + ', compte environ <strong>' + dureeTexte(duree) + '</strong> de jeu';
+    const debut = BT.heureDuJour(r.heureDebut);
+    if (debut === null) {
+      h += '.</p>';
+      if (r.heureFin) h += '<p>Indique l’heure de début pour savoir si le tournoi tient avant la fin de la salle.</p>';
+      return h;
+    }
+    const fin = debut + duree;
+    h += ', de ' + esc(r.heureDebut) + ' à ' + BT.heure(fin) + ' environ.</p>';
+    const retard = BT.depassementSalle(tt, fin, debut);
+    if (retard) {
+      h += '<p class="horaires-alerte">Ça dépasse la fin de la salle (' + esc(r.heureFin) + ') de ' + dureeTexte(retard * 60000) + '. '
+        + 'Pour gagner du temps, baisse le nombre de matchs par équipe ou de points par set, fixe une durée maximum par match, ou ajoute des terrains.</p>';
+    } else if (retard === 0) {
+      const marge = Math.floor((BT.heureFinSalle(tt, debut) - fin) / 60000);
+      h += '<p class="horaires-ok">Ça tient avant la fin de la salle (' + esc(r.heureFin) + ')' + (marge >= 1 ? ', avec ' + dureeTexte(marge * 60000) + ' de marge' : '') + '.</p>';
+    }
+    return h;
   }
 
   /* ---------- Onglet Terrains ---------- */
@@ -316,8 +359,15 @@
         + '<div class="court"><div class="court-cote">' + nomComplet(m.a) + '</div><div class="court-filet"></div>'
         + '<div class="court-cote">' + nomComplet(m.b) + '</div></div>'
         + '<div class="terrain-depuis">Commencé à ' + BT.heure(m.debut) + ', ' + chronoHtml(m.debut) + '</div>'
+        + (BT.terrainFerme(t, n) ? '<div class="terrain-ferme-info">Terrain fermé après ce match</div>' : '')
         + recu
         + '<div class="terrain-pied">' + pied + '</div></article>';
+    }
+    if (BT.terrainFerme(t, n)) {
+      return '<article class="terrain terrain--ferme">'
+        + '<div class="terrain-tete"><span>Terrain ' + n + '</span></div>'
+        + '<div class="court court--libre"><div class="court-libre-texte">Terrain fermé</div><div class="court-filet"></div></div>'
+        + '<div class="terrain-pied"><button type="button" class="bouton" data-action="ouvrir-terrain" data-terrain="' + n + '">Rouvrir le terrain</button></div></article>';
     }
     let texte = 'Terrain libre';
     if (st === 'pret') texte = 'En attente du lancement';
@@ -393,7 +443,7 @@
     const appelPossible = attente.some((m) => !occupees.has(m.a) && !occupees.has(m.b));
     const libres = BT.terrainsLibres(t);
     const suite = BT.prochains(t);
-    const T = t.reglages.terrains;
+    const T = BT.nbTerrainsOuverts(t);
     const recus = aValider();
     let h = progression();
 
@@ -415,6 +465,7 @@
         + '<p>' + pluriel(t.matchs.length, 'match', 'matchs') + ' à jouer sur ' + pluriel(T, 'terrain') + '. '
         + 'Au lancement, ' + (Math.min(T, attente.length) > 1 ? 'les ' + Math.min(T, attente.length) + ' premiers matchs sont appelés' : 'le premier match est appelé')
         + ' sur les terrains.</p>'
+        + '<div class="horaires-estimation">' + texteHoraires(t) + '</div>'
         + '<button type="button" class="bouton accent grand" data-action="lancer">Lancer le tournoi</button></div>';
     }
     if (!t.finale && BT.nbQualifies(t) >= 2 && BT.phasePoulesFinie(t)) {
@@ -438,7 +489,11 @@
       h += '<div class="carte"><h2>Tournoi terminé</h2><p>' + texte + '</p>'
         + '<button type="button" class="bouton principal" data-action="onglet" data-cible="classement">Voir le classement</button></div>';
     } else {
-      h += '<h2>Sur les terrains</h2><div class="grille-terrains">'
+      h += '<div class="titre-actions"><h2>Sur les terrains</h2>'
+        + '<div class="terrains-ouverts"><span>Terrains ouverts</span><div class="filtres" role="group" aria-label="Ouvrir ou fermer un terrain">'
+        + Array.from({ length: t.reglages.terrains }, (_, i) => i + 1).map((n) => '<button type="button" data-action="basculer-terrain" data-terrain="' + n + '" aria-pressed="' + !BT.terrainFerme(t, n) + '" title="' + (BT.terrainFerme(t, n) ? 'Rouvrir' : 'Fermer') + ' le terrain ' + n + '">' + n + '</button>').join('')
+        + '</div></div></div>'
+        + '<div class="grille-terrains">'
         + numerosTerrains().map((n) => carteTerrain(n, BT.matchsEnCours(t).find((m) => m.terrain === n), st, appelPossible)).join('')
         + '</div>';
     }
@@ -596,11 +651,103 @@
     el.innerHTML = h;
   }
 
+  async function enregistrerMotDePasse(form) {
+    const champ = $('#mdp-nouveau');
+    const msg = $('#mdp-message');
+    const bouton = form.querySelector('[type="submit"]');
+    const motDePasse = champ.value.trim();
+    msg.hidden = true;
+    if (motDePasse.length < 6) {
+      msg.textContent = 'Choisis au moins 6 caractères.';
+      msg.hidden = false;
+      return;
+    }
+    const cle = D.cleOrganisateur(t.id);
+    if (!cle) {
+      msg.textContent = 'Cet appareil n’a pas la clé organisateur. Ouvre le lien organisateur, puis réessaie.';
+      msg.hidden = false;
+      return;
+    }
+    bouton.disabled = true;
+    try {
+      const acces = await BT.chiffrerCle(cle, motDePasse);
+      const ok = await agir((tt) => { tt.acces = acces; return true; });
+      champ.value = '';
+      if (ok) toast('Mot de passe enregistré. Donne-le seulement aux organisateurs.');
+    } catch (e) {
+      msg.textContent = 'Enregistrement impossible sur ce navigateur.';
+      msg.hidden = false;
+    }
+    bouton.disabled = false;
+    rendrePartager();
+  }
+
+  // Page réservée aux organisateurs : entrée par mot de passe si le tournoi en a un.
+  function formulaireAcces(acces) {
+    const zone = $('#acces-mdp');
+    if (!zone || zone.dataset.pret) return;
+    zone.dataset.pret = '1';
+    zone.innerHTML = '<form id="form-acces" class="acces-mdp" novalidate>'
+      + '<label for="mdp-acces">Mot de passe organisateur</label>'
+      + '<div class="annonce-ligne"><input type="password" id="mdp-acces" maxlength="64" autocomplete="current-password">'
+      + '<button type="submit" class="bouton principal">Entrer</button></div>'
+      + '<p class="erreur-champ" id="mdp-erreur" hidden></p></form>';
+    zone.querySelector('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const bouton = e.target.querySelector('[type="submit"]');
+      const erreur = $('#mdp-erreur');
+      erreur.hidden = true;
+      bouton.disabled = true;
+      bouton.textContent = 'Vérification';
+      const cle = await BT.dechiffrerCle(zone.acces || acces, $('#mdp-acces').value.trim());
+      if (!cle) {
+        erreur.textContent = 'Mot de passe incorrect.';
+        erreur.hidden = false;
+        setTimeout(() => { bouton.disabled = false; bouton.textContent = 'Entrer'; }, 1500);
+        return;
+      }
+      try {
+        await D.rejoindre(id, cle);
+        location.reload();
+      } catch (err) {
+        erreur.textContent = 'Accès refusé par la base. Réessaie dans un instant.';
+        erreur.hidden = false;
+        bouton.disabled = false;
+        bouton.textContent = 'Entrer';
+      }
+    });
+  }
+
+  /* ---------- Onglet Règles ---------- */
+
+  function rendreRegles() {
+    const el = $('#regles');
+    if (!t.matchs.length) {
+      el.innerHTML = '<div class="carte"><h2>Règles du tournoi</h2>'
+        + '<p>Les règles s’écrivent toutes seules à partir des réglages. Enregistre d’abord les réglages du tournoi.</p>'
+        + '<button type="button" class="bouton principal" data-action="onglet" data-cible="reglages">Ouvrir les réglages</button></div>';
+      return;
+    }
+    el.innerHTML = '<div class="carte regles">'
+      + '<h2>Règles du tournoi</h2>'
+      + '<p class="note pas-imprimer">Elles sont écrites à partir de tes réglages. Les joueurs les voient en ouvrant la page des équipes, puis peuvent y revenir avec le bouton Règles. '
+      + 'Pour ajouter tes propres règles, utilise le champ « Règles en plus » des réglages.</p>'
+      + '<p class="regles-tournoi">' + esc(t.nom) + '</p>'
+      + BT.reglesHtml(t)
+      + '<div class="actions" style="margin-top:18px">'
+      + '<button type="button" class="bouton principal grand" data-action="onglet" data-cible="direct">Aller aux terrains</button>'
+      + '<button type="button" class="bouton" data-action="imprimer-regles">Imprimer les règles</button>'
+      + '<button type="button" class="bouton" data-action="onglet" data-cible="reglages">Modifier les réglages</button>'
+      + '</div></div>';
+  }
+
   /* ---------- Onglet QR code ---------- */
 
   function rendrePartager() {
     const el = $('#partager');
     if (el.querySelector('details[open]')) return;
+    const champMdp = $('#mdp-nouveau');
+    if (champMdp && (document.activeElement === champMdp || champMdp.value)) return;
     const urlEquipes = BT.urlPage('equipe.html', { t: t.id });
     const urlEcran = (vue) => 'ecran.html?t=' + encodeURIComponent(t.id) + (vue ? '&vue=' + vue : '');
     let h = '<div class="carte"><div class="qr-carte"><div class="qr">' + BT.qrSvg(urlEquipes) + '</div><div>'
@@ -624,6 +771,15 @@
         + '<p class="lien-texte">' + esc(urlOrga) + '</p>'
         + '<div class="actions"><button type="button" class="bouton" data-action="copier" data-texte="' + esc(urlOrga) + '">Copier le lien organisateur</button></div>'
         + '</div></div></details></div>';
+      h += '<div class="carte pas-imprimer" style="margin-top:16px" id="carte-mdp"><h2>Mot de passe organisateur</h2>'
+        + '<p>' + (t.acces ? '<strong>Un mot de passe est défini.</strong> ' : '')
+        + 'Avec ce mot de passe, un autre organisateur peut gérer le tournoi depuis son téléphone, sans le lien organisateur. '
+        + 'Il ouvre la page des équipes, touche « Accès organisateur » en bas de page, puis entre le mot de passe.</p>'
+        + '<form id="form-mdp" class="annonce-ligne" novalidate><input type="password" id="mdp-nouveau" maxlength="64" autocomplete="new-password" placeholder="Au moins 6 caractères" aria-label="Mot de passe organisateur">'
+        + '<button type="submit" class="bouton principal">' + (t.acces ? 'Changer' : 'Enregistrer') + '</button></form>'
+        + '<p class="erreur-champ" id="mdp-message" hidden></p>'
+        + (t.acces ? '<div class="actions" style="margin-top:10px"><button type="button" class="bouton danger" data-action="mdp-supprimer">Supprimer le mot de passe</button></div>' : '')
+        + '</div>';
     } else {
       h += '<div class="encadre" style="margin-top:16px"><p>La synchronisation en ligne n’est pas encore activée : le tournoi est enregistré dans ce navigateur. '
         + 'L’écran d’affichage et la page des équipes fonctionnent sur cet ordinateur, par exemple dans une deuxième fenêtre envoyée sur une télé en HDMI. '
@@ -667,7 +823,11 @@
     $('#reglages').innerHTML = '<form id="form-reglages" class="carte" novalidate>'
       + '<h2>Le tournoi</h2>'
       + '<div class="grille-champs"><div class="champ"><label for="r-nom">Nom du tournoi</label>'
-      + '<input type="text" id="r-nom" maxlength="60" value="' + esc(b.nom) + '"></div></div>'
+      + '<input type="text" id="r-nom" maxlength="60" value="' + esc(b.nom) + '"></div>'
+      + '<div class="champ"><label for="r-debut">Heure de début</label><input type="time" id="r-debut" value="' + esc(r.heureDebut || '') + '">'
+      + '<span class="aide">Facultatif. Sert à estimer l’heure de fin.</span></div>'
+      + '<div class="champ"><label for="r-fin">Fin de la salle</label><input type="time" id="r-fin" value="' + esc(r.heureFin || '') + '">'
+      + '<span class="aide">Facultatif. Heure à laquelle il faut rendre la salle. Le site te prévient si le tournoi risque de déborder.</span></div></div>'
       + '<h2>Déroulement</h2>'
       + '<div class="grille-champs">'
       + '<div class="champ"><label for="r-equipes">Nombre d’équipes</label>' + nombre('r-equipes', b.equipes.length, 2, 64) + '</div>'
@@ -709,6 +869,8 @@
       + '<div class="champ" id="r-plafond-bloc"><label for="r-plafond">Score maximum d’un set</label>' + nombre('r-plafond', r.plafond, 1, 99) + '</div></div>'
       + '<div class="champ"><label for="r-duree">Durée maximum d’un match</label>' + nombre('r-duree', r.dureeLimite || 0, 0, 90)
       + '<span class="aide">En minutes, 0 si les matchs vont jusqu’au bout. Le temps restant s’affiche sur chaque terrain.</span></div>'
+      + '<div class="champ"><label for="r-prevue">Durée moyenne prévue d’un match</label>' + nombre('r-prevue', r.dureePrevue || 0, 0, 90)
+      + '<span class="aide">En minutes, 0 si tu ne sais pas. Sert à estimer les horaires avant les premiers résultats, ensuite le site se base sur la durée réelle des matchs.</span></div>'
       + '<div class="champ"><label for="r-repos">Repos minimum entre deux matchs d’une équipe</label>' + nombre('r-repos', r.reposMin || 0, 0, 30)
       + '<span class="aide">En minutes, 0 pour enchaîner. Un terrain peut rester libre quelques minutes, le temps qu’une équipe récupère.</span></div>'
       + '<div class="champ"><label for="r-terrains">Terrains disponibles</label>' + nombre('r-terrains', r.terrains, 1, 30)
@@ -723,11 +885,16 @@
       + '<span class="aide">Même règle d’écart que les poules, sans durée maximum.</span></div>'
       + '</div></div>'
       + '<div class="resume-reglages" id="r-resume" style="margin-top:20px"></div>'
+      + '<div class="horaires-estimation" id="r-horaires" aria-live="polite"></div>'
       + '<h2>Scores envoyés par les joueurs</h2>'
       + '<div class="grille-champs"><div class="champ">'
       + caseHtml('r-joueurs', r.scoresJoueurs, 'Les joueurs peuvent envoyer le score de leur match depuis leur téléphone. Un organisateur le valide ensuite.')
       + caseHtml('r-validation', r.validationAuto, 'Valider tout seul quand les deux équipes envoient le même score')
       + '</div></div>'
+      + '<h2>Règles en plus</h2>'
+      + '<div class="champ"><label for="r-regles">Tes propres règles, une par ligne</label>'
+      + '<textarea id="r-regles" rows="4" maxlength="1500" placeholder="Par exemple, échauffement de 2 minutes avant chaque match">' + esc(r.reglesPerso || '') + '</textarea>'
+      + '<span class="aide">Elles s’ajoutent aux règles écrites à partir des réglages, sur la page des équipes et dans l’onglet Règles.</span></div>'
       + '<div class="titre-actions"><h2>Équipes</h2>'
       + (BT.demarre(t) ? '' : '<button type="button" class="bouton petit" data-action="melanger">Mélanger l’ordre des équipes</button>') + '</div>'
       + '<p class="note">Le nom des joueurs est facultatif, il s’affiche sur les terrains et sur la page de l’équipe. Changer un nom ne touche pas aux matchs.'
@@ -904,11 +1071,49 @@
         + '<span><strong>' + Math.ceil(total / r.terrains) + '</strong> rotations sur ' + pluriel(r.terrains, 'terrain') + '</span>' : '')
       + '<span>' + esc(BT.texteFormat(r)) + '</span>';
 
+    clearTimeout(minuteurHoraires);
+    minuteurHoraires = setTimeout(estimerHoraires, 200);
+
     verifierNoms();
     let libelle = 'Enregistrer les réglages';
     if (!t.matchs.length) libelle = 'Enregistrer et créer les matchs';
     else if (structureChangee(t)) libelle = 'Enregistrer et recréer les matchs';
     $('#r-enregistrer').textContent = libelle;
+  }
+
+  let minuteurHoraires = null;
+
+  // Horaires estimés avec les réglages en cours de saisie (matchs recréés à blanc si besoin).
+  function estimerHoraires() {
+    const zone = $('#r-horaires');
+    if (!zone || !brouillon || !t) return;
+    const b = brouillon;
+    const r = b.reglages;
+    let h = '';
+    try {
+      if (BT.demarre(t)) {
+        const tt = Object.assign({}, t, { reglages: r });
+        const fin = BT.statut(t) !== 'termine' ? BT.finEstimee(tt) : null;
+        const retard = fin ? BT.depassementSalle(tt, fin) : null;
+        if (fin) {
+          h = '<p>Fin estimée vers <strong>' + BT.heure(fin) + '</strong>, d’après la durée des matchs déjà joués.</p>'
+            + (retard ? '<p class="horaires-alerte">C’est ' + dureeTexte(retard * 60000) + ' après la fin de la salle (' + esc(r.heureFin) + ').</p>' : '');
+        }
+      } else if (!BT.verifierDeroulement(b.equipes.length, r)) {
+        let tt;
+        if (t.matchs.length && !structureChangee(t)) tt = Object.assign({}, t, { reglages: r });
+        else {
+          tt = { id: 'estimation', nom: '', reglages: JSON.parse(JSON.stringify(r)), matchs: [],
+            equipes: b.equipes.map((e, i) => ({ id: e.id || 'x' + i, nom: e.nom || '', joueurs: '' })) };
+          BT.genererMatchs(tt);
+        }
+        h = texteHoraires(tt);
+      }
+    } catch (err) {
+      h = '';
+    }
+    zone.innerHTML = h;
+    zone.hidden = !h;
   }
 
   function surSaisieReglages(e) {
@@ -956,6 +1161,10 @@
       case 'r-terrains': { const n = BT.entier(v, 1, 30, null); if (n) r.terrains = n; break; }
       case 'r-duree': { const d = BT.entier(v, 0, 90, null); if (d !== null) r.dureeLimite = d; break; }
       case 'r-repos': { const d = BT.entier(v, 0, 30, null); if (d !== null) r.reposMin = d; break; }
+      case 'r-prevue': { const d = BT.entier(v, 0, 90, null); if (d !== null) r.dureePrevue = d; break; }
+      case 'r-regles': r.reglesPerso = v.slice(0, 1500); break;
+      case 'r-debut': r.heureDebut = /^\d{2}:\d{2}$/.test(v) ? v : ''; break;
+      case 'r-fin': r.heureFin = /^\d{2}:\d{2}$/.test(v) ? v : ''; break;
       case 'r-auto': r.appelAuto = cible.checked; break;
       case 'r-joueurs': r.scoresJoueurs = cible.checked; break;
       case 'r-validation': r.validationAuto = cible.checked; break;
@@ -996,6 +1205,7 @@
       const recreer = structureChangee(tt);
       tt.nom = nouveauNom;
       tt.reglages = nouveauxReglages;
+      if (tt.fermes) { tt.fermes = BT.terrainsFermes(tt); if (!tt.fermes.length) delete tt.fermes; }
       tt.equipes = nouvellesEquipes(tt);
       if (recreer) BT.genererMatchs(tt);
       else {
@@ -1008,7 +1218,8 @@
     if (!resultat) return;
     brouillon = null;
     if (structure) {
-      changerOnglet('direct');
+      changerOnglet('regles');
+      window.scrollTo(0, 0);
     } else {
       rendreReglages();
       $('#r-info').textContent = 'Réglages enregistrés.';
@@ -1335,6 +1546,32 @@
           });
         }
         break;
+      case 'mdp-supprimer':
+        if (confirm('Supprimer le mot de passe organisateur ? Les appareils déjà organisateurs le restent.')) {
+          agir((tt) => { delete tt.acces; return true; }).then((r) => { if (r) toast('Mot de passe supprimé.'); });
+        }
+        break;
+      case 'imprimer-regles':
+        $('#regles').classList.add('imprimer');
+        window.print();
+        $('#regles').classList.remove('imprimer');
+        break;
+      case 'basculer-terrain':
+      case 'ouvrir-terrain': {
+        const n = Number(el.dataset.terrain);
+        if (el.dataset.action === 'ouvrir-terrain' || BT.terrainFerme(t, n)) {
+          agir((tt) => {
+            BT.ouvrirTerrain(tt, n);
+            if (BT.appelAutoActif(tt) && BT.demarre(tt)) BT.remplirTerrains(tt);
+            return true;
+          });
+          break;
+        }
+        const occupe = BT.matchsEnCours(t).some((m) => m.terrain === n);
+        if (!confirm('Fermer le terrain ' + n + ' ? Aucun match n’y sera plus appelé' + (occupe ? ' après celui en cours' : '') + '. Tu pourras le rouvrir à tout moment.')) break;
+        agir((tt) => { BT.fermerTerrain(tt, n); return true; });
+        break;
+      }
       case 'appeler': {
         const terrain = Number(el.dataset.terrain);
         // Appel à la main : le repos minimum n'est pas imposé.
@@ -1401,6 +1638,10 @@
       e.preventDefault();
       enregistrerReglages();
     }
+    if (e.target.id === 'form-mdp') {
+      e.preventDefault();
+      enregistrerMotDePasse(e.target);
+    }
     if (e.target.id === 'form-annonce') {
       e.preventDefault();
       const texte = $('#annonce').value.trim();
@@ -1461,9 +1702,18 @@
       const lienEquipes = 'equipe.html?t=' + encodeURIComponent(id);
       messagePlein(D.enLigne ? 'Page réservée aux organisateurs' : 'Ce tournoi n’est pas sur cet appareil',
         D.enLigne
-          ? 'Pour gérer ce tournoi, ouvre le lien organisateur envoyé par la personne qui l’a créé. Pour suivre ton équipe, va sur la page des équipes.'
+          ? 'Pour gérer ce tournoi, ouvre le lien organisateur envoyé par la personne qui l’a créé, ou entre le mot de passe organisateur s’il y en a un. Pour suivre ton équipe, va sur la page des équipes.'
           : 'Les tournois sont enregistrés dans le navigateur où ils ont été créés.',
         D.enLigne ? '<a class="bouton principal" href="' + lienEquipes + '">Page des équipes</a>' : null);
+      if (D.enLigne) {
+        $('.contenu .carte').insertAdjacentHTML('beforeend', '<div id="acces-mdp"></div>');
+        D.suivre(id, (lu) => {
+          const zone = $('#acces-mdp');
+          if (!lu || !lu.acces || !zone) return;
+          zone.acces = lu.acces;
+          formulaireAcces(lu.acces);
+        });
+      }
       return;
     }
     D.assurerOrganisateur(id).catch((e) => toast('Connexion à la base impossible. ' + (e.message || '')));

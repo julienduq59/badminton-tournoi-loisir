@@ -57,6 +57,22 @@ commandes, commits et textes du site.
   équipe a fini il y a moins longtemps (sauf appel à la main, `ignorerRepos`), `planifier` en tient
   compte si la durée des matchs est connue, `attenteRepos(t)` donne l'attente. La page de gestion
   relance l'appel toutes les 15 s quand le repos est fini (transaction, sans doublon).
+- Horaires : `reglages.heureDebut` / `heureFin` (« HH:MM », fin de la salle) et `dureePrevue` (minutes).
+  `dureeMatch()` prend la médiane réelle, sinon `dureeReglee(r)` (durée prévue, puis durée maximum).
+  `dureeEstimee(t, D)` simule tout le tournoi (phase finale comprise), `depassementSalle()` compare à
+  `heureFinSalle()`. Avant le lancement, `planifier` part de l'heure de début si elle est à venir.
+- Terrains fermés : `t.fermes` (numéros), `fermerTerrain` / `ouvrirTerrain`, exclus de `terrainsLibres`,
+  `planifier` et `finEstimee` comptent `nbTerrainsOuverts(t)`. Un match en cours finit sur un terrain fermé.
+- Règles du tournoi : `reglesTournoi(t)` les écrit à partir des réglages (rien d'autre que ce que le site
+  applique), plus `reglages.reglesPerso` (texte des organisateurs). Organisateur : onglet « Règles »
+  (`#regles`), affiché juste après la création des matchs, imprimable. Téléphone : vue `#regles`, montrée
+  à l'ouverture tant que ce téléphone n'a pas lu la version actuelle (`empreinteRegles`, clé locale
+  `badminton:regles:<id>`), bouton « Règles » dans la barre.
+- Mot de passe organisateur (mode en ligne) : `t.acces = { sel, iv, chiffre }` = clé organisateur chiffrée
+  avec le mot de passe (PBKDF2 200 000 tours puis AES-GCM, `chiffrerCle` / `dechiffrerCle`). Défini,
+  changé ou supprimé dans l'onglet QR code ; saisi sur `tournoi.html` par un appareil non organisateur
+  (lien « Accès organisateur » en bas de la page des équipes). Aucune règle Firebase à changer. Retiré
+  à la restauration d'une sauvegarde (nouvelle clé).
 - Sauvegarde : fichier JSON `{ format: 'badminton-tournoi-loisir', version, date, tournoi }`
   (Réglages), restauré depuis l'accueil comme un nouveau tournoi (nouvel identifiant).
 - `t.pause` suspend l'appel automatique (`appelAutoActif`), `t.annonce` est le message affiché

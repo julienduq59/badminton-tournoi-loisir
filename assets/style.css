@@ -198,7 +198,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .champ { display: flex; flex-direction: column; gap: 6px; }
 .champ > label, .champ > .etiquette-champ { font-weight: 650; font-size: .95rem; }
 .champ .aide { font-size: .85rem; color: var(--encre-douce); }
-.champ input[type="text"], .champ input[type="number"], .champ select, .champ textarea {
+.champ input[type="text"], .champ input[type="number"], .champ input[type="time"], .champ select, .champ textarea {
   width: 100%;
   min-height: 44px;
   padding: 8px 12px;
@@ -1177,6 +1177,42 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .chiffres-liste { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; padding: 14px 16px; background: var(--carte); border: 1px solid var(--bord); border-radius: var(--rayon); }
 .chiffres-liste dt { font-weight: 750; color: var(--encre-douce); font-size: .9rem; }
 .chiffres-liste dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+
+/* ---------- Horaires, terrains fermés, règles ---------- */
+
+.champ textarea { min-height: 96px; resize: vertical; line-height: 1.45; }
+.progression-texte small.fin-retard { color: var(--rouge); font-weight: 700; }
+.horaires-estimation { margin-top: 12px; }
+.horaires-estimation:empty { display: none; }
+.horaires-estimation p { margin: 0 0 6px; }
+.horaires-alerte { padding: 10px 12px; border-radius: var(--rayon-petit); background: var(--rouge-clair); color: var(--rouge); font-weight: 600; }
+.horaires-ok { color: var(--vert-700); font-weight: 600; }
+.terrains-ouverts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.terrains-ouverts > span { font-size: .85rem; font-weight: 650; color: var(--encre-douce); }
+.terrains-ouverts .filtres { margin: 0; gap: 4px; }
+.terrains-ouverts .filtres button { min-width: 36px; padding: 5px 9px; }
+.terrains-ouverts .filtres button[aria-pressed="false"] { text-decoration: line-through; color: var(--encre-douce); background: #eef0ef; }
+.terrain--ferme { opacity: .75; }
+.terrain--ferme .court--libre { background: repeating-linear-gradient(135deg, #eef0ef 0 10px, #e3e7e5 10px 20px); }
+.terrain-ferme-info { margin: 0 14px 8px; padding: 4px 10px; border-radius: 999px; background: var(--rouge-clair); color: var(--rouge); font-size: .82rem; font-weight: 700; justify-self: start; width: fit-content; }
+.e-terrain--ferme { opacity: .55; }
+.acces-mdp { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--bord); display: grid; gap: 8px; }
+.acces-mdp label { font-weight: 650; }
+#form-mdp { margin-top: 4px; }
+.acces-orga { margin-top: 18px; text-align: center; }
+.bouton-regles { margin-left: auto; flex: none; background: rgba(255, 255, 255, .12); color: #fff; border-color: rgba(255, 255, 255, .35); }
+.bouton-regles:hover { border-color: #fff; }
+.regles-tournoi { margin: -6px 0 10px; font-weight: 650; color: var(--encre-douce); }
+.regles-liste { display: grid; gap: 12px; }
+.regles-bloc { padding: 14px 16px; border: 1px solid var(--bord); border-radius: var(--rayon); background: var(--carte); }
+.regles-bloc h3 { margin: 0 0 6px; font-size: 1rem; color: var(--vert-700); }
+.regles-bloc ul { margin: 0; padding-left: 1.1em; display: grid; gap: 5px; }
+.regles-bloc li { line-height: 1.45; }
+.carte.regles .regles-bloc { background: var(--vert-50); border-color: transparent; }
+@media print {
+  .regles-bloc { break-inside: avoid; border: 1px solid #bbb; background: #fff !important; }
+  .regles h2 { font-size: 18pt; }
+}
 
 /* ---------- Petits écrans ---------- */
 
