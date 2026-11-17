@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gestion du tournoi · Badminton</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#0a3d2b">
+  <link rel="icon" href="assets/volant.svg?v=20261117" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/style.css?v=20261117">
+</head>
+<body class="page-orga">
+  <header class="barre">
+    <a class="marque" href="./" title="Mes tournois"><span id="icone"></span><span>Mes tournois</span></a>
+    <span class="separateur"></span>
+    <div class="barre-titre">
+      <h1 id="titre">Tournoi</h1>
+      <span class="pastille" id="statut"></span>
+    </div>
+    <div class="barre-actions">
+      <a class="bouton accent" id="lien-ecran" target="_blank" rel="noopener">Écran d'affichage</a>
+    </div>
+  </header>
+
+  <nav class="onglets" role="tablist" aria-label="Sections du tournoi">
+    <button type="button" role="tab" data-onglet="direct">Terrains</button>
+    <button type="button" role="tab" data-onglet="matchs">Matchs</button>
+    <button type="button" role="tab" data-onglet="classement">Classement</button>
+    <button type="button" role="tab" data-onglet="reglages">Réglages</button>
+    <button type="button" role="tab" data-onglet="partager">QR code</button>
+  </nav>
+
+  <main class="contenu">
+    <section class="panneau" id="direct" role="tabpanel"></section>
+    <section class="panneau" id="matchs" role="tabpanel"></section>
+    <section class="panneau" id="classement" role="tabpanel"></section>
+    <section class="panneau" id="reglages" role="tabpanel"></section>
+    <section class="panneau" id="partager" role="tabpanel"></section>
+  </main>
+
+  <dialog class="dialogue" id="dialogue-score" aria-labelledby="score-titre">
+    <form id="form-score" novalidate>
+      <h2 id="score-titre">Score</h2>
+      <p class="note" id="score-format"></p>
+      <div class="score-grille" id="score-grille"></div>
+      <div class="score-message" id="score-message" hidden></div>
+      <div class="dialogue-actions">
+        <button type="button" class="bouton danger gauche" id="score-effacer" hidden>Effacer le résultat</button>
+        <button type="button" class="bouton discret" id="score-annuler">Annuler</button>
+        <button type="submit" class="bouton principal" id="score-valider">Valider le score</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="assets/vendor/qrcode.js?v=20261117"></script>
+  <script src="assets/commun.js?v=20261117"></script>
+  <script src="assets/tournoi.js?v=20261117"></script>
+</body>
+</html>

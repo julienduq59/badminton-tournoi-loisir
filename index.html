@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tournoi de badminton loisir</title>
+  <meta name="description" content="Organisation d'un tournoi de badminton loisir : équipes, terrains, scores, écran d'affichage pour la salle et classement.">
+  <meta name="theme-color" content="#0a3d2b">
+  <link rel="icon" href="assets/volant.svg?v=20261117" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/style.css?v=20261117">
+</head>
+<body class="page-accueil">
+  <header class="barre">
+    <a class="marque" href="./"><span id="icone"></span><span>Tournoi de badminton loisir</span></a>
+  </header>
+
+  <main class="contenu">
+    <section class="intro">
+      <h1>Organise ton tournoi de badminton</h1>
+      <p>Tu règles le nombre d'équipes, de matchs, de sets, de points et de terrains. Le site prépare les matchs, les appelle sur les terrains libres et tient le classement à jour.</p>
+      <button class="bouton accent grand" type="button" id="nouveau">Créer un tournoi</button>
+    </section>
+
+    <h2>Mes tournois</h2>
+    <ul class="liste-tournois" id="liste"></ul>
+    <p class="vide" id="vide" hidden>Aucun tournoi pour l'instant.</p>
+    <p class="note">Les tournois sont enregistrés dans ce navigateur, sur cet appareil.</p>
+  </main>
+
+  <script src="assets/commun.js?v=20261117"></script>
+  <script src="assets/accueil.js?v=20261117"></script>
+</body>
+</html>
