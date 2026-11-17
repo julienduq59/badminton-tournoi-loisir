@@ -65,7 +65,10 @@
         return '<article class="e-terrain' + (appel ? ' e-terrain--appel' : '') + '">' + tete + '<div class="e-court">'
           + '<div class="e-court-cote">' + nomComplet(m.a) + '</div><div class="e-court-filet"></div>'
           + '<div class="e-court-cote">' + nomComplet(m.b) + '</div></div>'
-          + '<div class="e-terrain-pied">' + (appel ? '<span class="e-appel">Appel</span>' : '<span class="e-etiquette">' + esc(BT.etiquetteMatch(t, m)) + '</span>') + chrono(m) + '</div></article>';
+          + '<div class="e-terrain-pied"><span class="e-pied-gauche">'
+          + (BT.categorieMatch(t, m) ? '<span class="e-cat e-cat--' + esc(m.categorie) + '">' + esc(BT.categorieMatch(t, m)) + '</span>' : '')
+          + (appel ? '<span class="e-appel">Appel</span>' : '<span class="e-etiquette">' + esc(BT.etiquetteMatch(t, m)) + '</span>') + '</span>'
+          + chrono(m) + '</div></article>';
       }).join('')
       + '</div></section>';
   }
@@ -88,7 +91,7 @@
     } else if (liste.length) {
       const m = liste[0].m;
       const lbl = BT.etiquetteMatch(t, m);
-      h += '<div class="e-suivant"><div class="e-suivant-num">Match ' + BT.numero(t, m) + (lbl ? ' · ' + esc(lbl) : '') + '</div>'
+      h += '<div class="e-suivant"><div class="e-suivant-num">Match ' + BT.numero(t, m) + (BT.categorieMatch(t, m) ? ' · ' + esc(BT.categorieMatch(t, m)) : '') + (lbl ? ' · ' + esc(lbl) : '') + '</div>'
         + '<div class="e-suivant-equipe">' + nom(m.a) + '</div><div class="e-suivant-contre">contre</div>'
         + '<div class="e-suivant-equipe">' + nom(m.b) + '</div></div>';
     } else {
@@ -98,7 +101,7 @@
     if (liste.length > 1) {
       h += '<h2>Ensuite</h2><ol class="e-liste" id="e-liste">'
         + liste.slice(1, 12).map((x) => '<li><span class="e-num">' + BT.numero(t, x.m) + heure(x) + '</span>'
-          + '<span class="e-eq">' + nom(x.m.a) + '<span class="e-contre">contre</span>' + nom(x.m.b) + '</span></li>').join('')
+          + '<span class="e-eq">' + (BT.categorieMatch(t, x.m) ? '<span class="e-cat-liste">' + esc(BT.categorieMatch(t, x.m)) + '</span>' : '') + nom(x.m.a) + '<span class="e-contre">contre</span>' + nom(x.m.b) + '</span></li>').join('')
         + '</ol>';
     }
     h += blocQr() + '</div></aside>';

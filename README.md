@@ -8,7 +8,8 @@ Adresse du site : https://julienduq59.github.io/badminton-tournoi-loisir/
 
 - Réglages du tournoi, tous modifiables : nombre d'équipes, matchs par équipe (ou tous contre tous), sets par match, points par set avec ou sans 2 points d'écart et score maximum, nombre de terrains. Exemple de départ : 15 équipes, 7 terrains, 1 set de 15 points avec 2 points d'écart.
 - Déroulement : une seule poule (tous contre tous ou un nombre de matchs par équipe) ou plusieurs poules, puis phase finale à élimination directe en option (finale, demi-finales, quarts…, avec match pour la 3e place et format de match propre). Les meilleures têtes de série passent directement au tour suivant quand le nombre de qualifiés n'est pas une puissance de 2, et deux équipes d'une même poule ne se croisent pas au premier tour quand c'est possible.
-- Création des matchs : chaque équipe joue le même nombre de matchs (dans sa poule), avec le plus de repos possible entre deux matchs.
+- Catégories : simple, double et mixte, avec le nombre de matchs que joue chaque équipe dans chaque catégorie, et une case pour compter le mixte comme un double. La catégorie s'affiche sur chaque match (terrains, écran, téléphones).
+- Création des matchs : chaque équipe joue le même nombre de matchs (dans sa poule), avec le plus de repos possible entre deux matchs. Les numéros des matchs suivent l'ordre réel des appels.
 - Appel automatique du match suivant dès qu'un terrain se libère, report d'un match en fin de liste.
 - Scores : les joueurs envoient le score de leur match depuis leur téléphone, un organisateur le valide, le corrige ou le refuse. Les organisateurs peuvent aussi saisir les scores eux-mêmes. Option pour valider tout seul quand les deux équipes envoient le même score.
 - Écran d'affichage pour la salle (télé ou vidéoprojecteur) : matchs en cours sur chaque terrain, prochain match, matchs suivants, QR code, puis podium et classement final.

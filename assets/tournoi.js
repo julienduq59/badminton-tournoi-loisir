@@ -102,6 +102,17 @@
     el.hidden = true;
   }
 
+  // « Double · Poule A · » devant le numéro d'un match.
+  function libelles(m) {
+    const x = [BT.categorieMatch(t, m), BT.etiquetteMatch(t, m)].filter(Boolean).map(esc).join(' · ');
+    return x ? x + ' · ' : '';
+  }
+
+  function pastilleCategorie(m) {
+    const c = BT.categorieMatch(t, m);
+    return c ? '<span class="match-cat match-cat--' + esc(m.categorie) + '">' + esc(c) + '</span>' : '';
+  }
+
   function equipesOccupees() {
     const s = new Set();
     BT.matchsEnCours(t).forEach((m) => { s.add(m.a); s.add(m.b); });
@@ -276,7 +287,7 @@
           + '<button type="button" class="bouton" data-action="reporter" data-id="' + m.id + '">Reporter</button>';
       }
       return '<article class="terrain' + (liste.length ? ' terrain--recu' : '') + '">'
-        + '<div class="terrain-tete"><span>Terrain ' + n + '</span><span class="num-match">' + (BT.etiquetteMatch(t, m) ? esc(BT.etiquetteMatch(t, m)) + ' · ' : '') + 'Match ' + BT.numero(t, m) + '</span></div>'
+        + '<div class="terrain-tete"><span>Terrain ' + n + '</span><span class="num-match">' + libelles(m) + 'Match ' + BT.numero(t, m) + '</span></div>'
         + '<div class="court"><div class="court-cote">' + nomComplet(m.a) + '</div><div class="court-filet"></div>'
         + '<div class="court-cote">' + nomComplet(m.b) + '</div></div>'
         + '<div class="terrain-depuis">Commencé à ' + BT.heure(m.debut) + ', ' + chronoHtml(m.debut) + '</div>'
@@ -459,7 +470,7 @@
     }
     return '<li class="match match--' + m.statut + (o.suivant ? ' match--suivant' : '') + '">'
       + '<span class="match-num" title="Match ' + BT.numero(t, m) + '">' + BT.numero(t, m) + '</span>'
-      + '<span class="match-equipes">' + (BT.etiquetteMatch(t, m) ? '<span class="match-tour' + (m.phase === 'finale' ? ' match-tour--finale' : '') + '">' + esc(BT.etiquetteMatch(t, m)) + '</span>' : '')
+      + '<span class="match-equipes">' + pastilleCategorie(m) + (BT.etiquetteMatch(t, m) ? '<span class="match-tour' + (m.phase === 'finale' ? ' match-tour--finale' : '') + '">' + esc(BT.etiquetteMatch(t, m)) + '</span>' : '')
       + '<span' + clsA + '>' + nom(m.a) + '</span><span class="contre">contre</span><span' + clsB + '>' + nom(m.b) + '</span></span>'
       + '<span class="match-etat">' + etat + '</span>'
       + '<div class="match-actions">' + actions.join('') + '</div></li>';
@@ -605,7 +616,7 @@
   /* ---------- Onglet Réglages ---------- */
 
   function copieReglages() {
-    const r = Object.assign({}, BT.REGLAGES_DEFAUT, t.reglages);
+    const r = JSON.parse(JSON.stringify(Object.assign({}, BT.REGLAGES_DEFAUT, t.reglages)));
     return {
       nom: t.nom,
       reglages: r,
@@ -635,8 +646,6 @@
       + '<div class="champ"><label for="r-format">Organisation</label>'
       + '<select id="r-format"><option value="championnat"' + (r.format !== 'poules' ? ' selected' : '') + '>Une seule poule, tous ensemble</option>'
       + '<option value="poules"' + (r.format === 'poules' ? ' selected' : '') + '>Plusieurs poules</option></select></div>'
-      + '<div class="champ" id="r-matchs-bloc"><label for="r-matchs">Matchs par équipe</label>' + nombre('r-matchs', r.matchsParEquipe, 1, 63)
-      + caseHtml('r-tous', r.tousContreTous, 'Chaque équipe rencontre toutes les autres') + '</div>'
       + '<div class="champ" id="r-poules-bloc"><label for="r-poules">Nombre de poules</label>' + nombre('r-poules', r.nbPoules, 2, 8)
       + '<span class="aide" id="r-poules-aide"></span></div>'
       + '<div class="champ"><label for="r-finale" id="r-finale-label">Phase finale</label>'
@@ -646,7 +655,20 @@
       + '</select>'
       + nombre('r-qualifies', r.qualifiesParPoule, 0, 8)
       + '<span class="aide" id="r-finale-aide"></span>'
-      + caseHtml('r-petite', r.petiteFinale, 'Match pour la 3e place') + '</div>'
+      + caseHtml('r-petite', r.petiteFinale, 'Match pour la 3e place')
+      + '<div id="r-finale-cat-bloc" style="margin-top:6px"><label for="r-finale-cat" class="etiquette-champ">Catégorie des matchs de phase finale</label>'
+      + '<select id="r-finale-cat">' + BT.CATEGORIES.map((c) => '<option value="' + c.cle + '"' + (r.finaleCategorie === c.cle ? ' selected' : '') + '>' + c.nom + '</option>').join('') + '</select></div>'
+      + '</div>'
+      + '</div>'
+      + '<h3 class="sous-titre">Matchs de chaque équipe, par catégorie</h3>'
+      + caseHtml('r-mixte-double', r.mixteEgalDouble, 'Mixte compté comme double (pas de différence entre mixte et double)')
+      + '<div class="grille-champs grille-categories">'
+      + BT.CATEGORIES.map((c) => {
+        const x = r.cat[c.cle] || { k: 0, tous: false };
+        return '<div class="champ" id="r-cat-' + c.cle + '-bloc"><label for="r-cat-' + c.cle + '" id="r-cat-' + c.cle + '-label">' + c.pluriel.charAt(0).toUpperCase() + c.pluriel.slice(1) + '</label>'
+          + nombre('r-cat-' + c.cle, x.k || 0, 0, 63)
+          + caseHtml('r-cat-' + c.cle + '-tous', x.tous, '') + '</div>';
+      }).join('')
       + '</div>'
       + '<p class="erreur-champ" id="r-matchs-erreur" hidden></p>'
       + '<h2>Matchs</h2>'
@@ -740,14 +762,28 @@
     const avant = tournoi.reglages;
     if (!tournoi.matchs.length || brouillon.equipes.length !== tournoi.equipes.length) return true;
     if ((r.format || 'championnat') !== (avant.format || 'championnat')) return true;
-    if (r.format === 'poules' ? r.nbPoules !== avant.nbPoules : r.matchsParEquipe !== avant.matchsParEquipe) return true;
+    if (r.format === 'poules' && r.nbPoules !== avant.nbPoules) return true;
+    if (JSON.stringify(BT.categoriesJouees(r)) !== JSON.stringify(BT.categoriesJouees(avant))) return true;
     return brouillon.equipes.some((e, i) => e.id !== tournoi.equipes[i].id);
   }
 
   // Nombre de matchs de la phase de poules (ou du championnat) avec ces réglages.
   function compterMatchsPoules(n, r) {
-    if (r.format === 'poules') return BT.taillesPoules(n, r.nbPoules).reduce((s, k) => s + (k * (k - 1)) / 2, 0);
-    return (n * r.matchsParEquipe) / 2;
+    const tailles = r.format === 'poules' ? BT.taillesPoules(n, r.nbPoules) : [n];
+    return BT.categoriesJouees(r).reduce((total, c) => total
+      + tailles.reduce((s, taille) => s + (taille * (c.tous ? taille - 1 : c.k)) / 2, 0), 0);
+  }
+
+  // « Chaque équipe joue 14 doubles et 4 simples » (en poules : pour la plus grande poule).
+  function texteParEquipe(n, r) {
+    const taille = r.format === 'poules' ? Math.max(...BT.taillesPoules(n, r.nbPoules)) : n;
+    const morceaux = BT.categoriesJouees(r).map((c) => {
+      const k = c.tous ? taille - 1 : c.k;
+      return k + ' ' + (k > 1 ? c.pluriel : c.nom.toLowerCase());
+    });
+    if (!morceaux.length) return '';
+    const liste = morceaux.length > 1 ? morceaux.slice(0, -1).join(', ') + ' et ' + morceaux[morceaux.length - 1] : morceaux[0];
+    return (r.format === 'poules' ? 'Dans sa poule, chaque équipe joue jusqu’à ' : 'Chaque équipe joue ') + liste + '.';
   }
 
   function texteTailles(tailles) {
@@ -760,13 +796,17 @@
     const r = b.reglages;
     const n = b.equipes.length;
     const poules = r.format === 'poules';
-    if (r.tousContreTous) {
-      r.matchsParEquipe = n - 1;
-      $('#r-matchs').value = n - 1;
-    }
-    $('#r-matchs').disabled = r.tousContreTous;
-    $('#r-matchs').max = Math.max(1, n - 1);
-    $('#r-matchs-bloc').hidden = poules;
+    // Catégories : nombre de matchs par équipe, ou contre toutes les autres
+    BT.CATEGORIES.forEach((c) => {
+      const x = r.cat[c.cle];
+      const champ = $('#r-cat-' + c.cle);
+      $('#r-cat-' + c.cle + '-bloc').hidden = c.cle === 'mixte' && r.mixteEgalDouble;
+      $('#r-cat-' + c.cle + '-label').textContent = c.cle === 'double' && r.mixteEgalDouble ? 'Doubles (mixtes compris)' : c.pluriel.charAt(0).toUpperCase() + c.pluriel.slice(1);
+      $('#r-cat-' + c.cle + '-tous-texte').textContent = poules ? 'Contre toutes les équipes de sa poule' : 'Contre toutes les autres équipes';
+      champ.disabled = x.tous;
+      champ.max = Math.max(1, n - 1);
+      if (x.tous && !poules) champ.value = n - 1;
+    });
     $('#r-poules-bloc').hidden = !poules;
     if (poules && !BT.verifierPoules(n, r.nbPoules)) {
       $('#r-poules-aide').textContent = 'Poules de ' + texteTailles(BT.taillesPoules(n, r.nbPoules)) + ' équipes. Chaque équipe joue contre toutes celles de sa poule.';
@@ -791,6 +831,10 @@
     if (t.finale) aideFinale = 'La phase finale est déjà lancée. Ces réglages ne la modifient plus, sauf le match pour la 3e place.';
     $('#r-finale-aide').textContent = aideFinale;
     $('#r-petite-case').hidden = Q < 4 && !t.finale;
+    const jouees = BT.categoriesJouees(r).map((c) => c.cle);
+    $('#r-finale-cat-bloc').hidden = Q < 2 || jouees.length < 2 || !!t.finale;
+    $('#r-finale-cat').querySelectorAll('option').forEach((o) => { o.disabled = !jouees.includes(o.value); });
+    $('#r-finale-cat').value = BT.categorieFinale(r);
     $('#r-finale-format-bloc').hidden = Q < 2 && !t.finale;
     $('#r-finale-champs').hidden = !r.formatFinale;
     const finaleImpair = r.finaleSets % 2 === 1 && r.finaleSets >= 3;
@@ -821,6 +865,7 @@
     const matchsFinale = Q >= 2 ? Q - 1 + (r.petiteFinale && Q >= 4 ? 1 : 0) : 0;
     $('#r-resume').innerHTML = '<span><strong>' + n + '</strong> équipes</span>'
       + (poules && !erreur ? '<span><strong>' + r.nbPoules + '</strong> poules</span>' : '')
+      + (!erreur ? '<span>' + esc(texteParEquipe(n, r)) + '</span>' : '')
       + (total ? '<span><strong>' + total + '</strong> ' + (poules ? 'matchs de poule' : 'matchs') + '</span>'
         + (matchsFinale ? '<span><strong>' + matchsFinale + '</strong> matchs de phase finale</span>' : '')
         + '<span><strong>' + Math.ceil(total / r.terrains) + '</strong> rotations sur ' + pluriel(r.terrains, 'terrain') + '</span>' : '')
@@ -852,7 +897,8 @@
         if (n && n !== b.equipes.length) changerNbEquipes(n);
         break;
       }
-      case 'r-matchs': { const k = BT.entier(v, 1, 63, null); if (k) r.matchsParEquipe = k; break; }
+      case 'r-mixte-double': r.mixteEgalDouble = cible.checked; break;
+      case 'r-finale-cat': r.finaleCategorie = v; break;
       case 'r-format': r.format = v === 'poules' ? 'poules' : 'championnat'; break;
       case 'r-poules': { const p = BT.entier(v, 2, 8, null); if (p) r.nbPoules = p; break; }
       case 'r-finale': r.phaseFinale = BT.entier(v, 0, 16, 0); break;
@@ -862,7 +908,13 @@
       case 'r-finale-sets': { const s = BT.entier(v, 1, 5, null); if (s) r.finaleSets = s; break; }
       case 'r-finale-meilleur': r.finaleAuMeilleur = cible.checked; break;
       case 'r-finale-points': { const p = BT.entier(v, 1, 99, null); if (p) r.finalePoints = p; break; }
-      case 'r-tous': r.tousContreTous = cible.checked; break;
+      default: {
+        const cat = /^r-cat-(simple|double|mixte)(-tous)?$/.exec(cible.id);
+        if (!cat) return;
+        if (cat[2]) r.cat[cat[1]].tous = cible.checked;
+        else { const k = BT.entier(v, 0, 63, null); if (k !== null) r.cat[cat[1]].k = k; }
+        break;
+      }
       case 'r-sets': { const s = BT.entier(v, 1, 5, null); if (s) r.sets = s; break; }
       case 'r-meilleur': r.auMeilleur = cible.checked; break;
       case 'r-points': { const p = BT.entier(v, 1, 99, null); if (p) r.points = p; break; }
@@ -873,7 +925,6 @@
       case 'r-auto': r.appelAuto = cible.checked; break;
       case 'r-joueurs': r.scoresJoueurs = cible.checked; break;
       case 'r-validation': r.validationAuto = cible.checked; break;
-      default: return;
     }
     majReglages();
   }
@@ -961,7 +1012,7 @@
     const reg = BT.formatMatch(t, m);
     const n = Math.max(reg.sets, depart.length, ...recus.map((p) => p.sets.length));
     $('#score-titre').textContent = 'Match ' + BT.numero(t, m) + (m.statut === 'en_cours' ? ', terrain ' + m.terrain : '');
-    $('#score-format').textContent = (BT.etiquetteMatch(t, m) ? BT.etiquetteMatch(t, m) + '. ' : '') + BT.texteFormat(reg);
+    $('#score-format').textContent = [BT.categorieMatch(t, m), BT.etiquetteMatch(t, m)].filter(Boolean).join(', ') + (BT.categorieMatch(t, m) || BT.etiquetteMatch(t, m) ? '. ' : '') + BT.texteFormat(reg);
     $('#score-recus').innerHTML = recus.map((p, i) => '<div class="score-recu"><span>Score envoyé par ' + nom(p.equipeId) + ' : <strong>' + esc(texteSets(p.sets)) + '</strong></span>'
       + '<button type="button" class="bouton petit" data-reprendre="' + i + '">Reprendre</button></div>').join('');
     $('#score-recus').hidden = !recus.length;
@@ -1102,11 +1153,11 @@
 
   function exporterMatchs() {
     const etats = { attente: 'À jouer', en_cours: 'En cours', termine: 'Terminé' };
-    const lignes = [['Match', 'Phase', 'Équipe 1', 'Équipe 2', 'État', 'Terrain', 'Score', 'Gagnant', 'Début', 'Fin']];
+    const lignes = [['Match', 'Catégorie', 'Phase', 'Équipe 1', 'Équipe 2', 'État', 'Terrain', 'Score', 'Gagnant', 'Début', 'Fin']];
     t.matchs.slice().sort((x, y) => BT.numero(t, x) - BT.numero(t, y)).forEach((m) => {
       const r = BT.resultat(m);
       const fini = m.statut === 'termine';
-      lignes.push([BT.numero(t, m), BT.etiquetteMatch(t, m), BT.nomEquipe(t, m.a), BT.nomEquipe(t, m.b), etats[m.statut] + (m.forfait ? ' (forfait ' + BT.nomEquipe(t, m.forfait) + ')' : ''),
+      lignes.push([BT.numero(t, m), BT.categorieMatch(t, m), BT.etiquetteMatch(t, m), BT.nomEquipe(t, m.a), BT.nomEquipe(t, m.b), etats[m.statut] + (m.forfait ? ' (forfait ' + BT.nomEquipe(t, m.forfait) + ')' : ''),
         m.terrain || '', fini ? BT.texteScore(m).replace(/ · /g, ' / ') : '',
         fini ? (r.gagnant ? BT.nomEquipe(t, r.gagnant === 'a' ? m.a : m.b) : 'Nul') : '',
         m.debut ? BT.heure(m.debut) : '', m.fin && fini ? BT.heure(m.fin) : '']);

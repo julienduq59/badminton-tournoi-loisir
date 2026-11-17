@@ -33,6 +33,13 @@ commandes, commits et textes du site.
 - Classement : victoires, puis confrontation directe si exactement deux équipes sont à égalité,
   puis différence de sets, puis différence de points. `classement(t, poule)` ne compte jamais les
   matchs de phase finale.
+- Catégories : `reglages.cat = { simple, double, mixte }` avec `{ k, tous }` = nombre de matchs que
+  joue chaque équipe dans la catégorie (tous : contre toutes les autres, ou toute sa poule).
+  `mixteEgalDouble` (case « mixte compté comme double ») ignore la catégorie mixte.
+  `categoriesJouees(r)`, champ `categorie` sur chaque match, `categorieMatch(t, m)` pour l'afficher.
+  Les catégories utilisent les mêmes séries d'adversaires et sont alternées au prorata par
+  `ordonner`. Phase finale jouée dans `finaleCategorie`. Les anciens tournois sans `cat` sont
+  convertis par `normaliser` (tout en double). Une équipe ne joue qu'un match à la fois.
 - Poules (`reglages.format = 'poules'`) : répartition en serpentin (`repartirPoules`), champ `poule`
   sur les équipes et les matchs, tous contre tous dans chaque poule.
 - Phase finale : `t.finale = { taille, places }` (places dans l'ordre du tableau, '' = case vide /

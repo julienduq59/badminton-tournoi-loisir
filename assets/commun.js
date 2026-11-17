@@ -6,8 +6,16 @@
   // Exemple de départ : 15 équipes, 7 terrains, 1 set de 15 points avec 2 points d'écart.
   const REGLAGES_DEFAUT = {
     nbEquipes: 15,
-    tousContreTous: true,
-    matchsParEquipe: 14,
+    tousContreTous: true,     // ancien réglage, remplacé par cat
+    matchsParEquipe: 14,      // ancien réglage, remplacé par cat
+    // Nombre de matchs que joue chaque équipe dans chaque catégorie (tous = contre toutes les autres).
+    cat: {
+      simple: { k: 0, tous: false },
+      double: { k: 14, tous: true },
+      mixte: { k: 0, tous: false },
+    },
+    mixteEgalDouble: true,    // ne pas distinguer mixte et double
+    finaleCategorie: 'double', // catégorie des matchs de phase finale
     sets: 1,
     auMeilleur: true,
     points: 15,
@@ -29,6 +37,36 @@
     finaleAuMeilleur: true,
     finalePoints: 21,
   };
+
+  const CATEGORIES = [
+    { cle: 'simple', nom: 'Simple', pluriel: 'simples' },
+    { cle: 'double', nom: 'Double', pluriel: 'doubles' },
+    { cle: 'mixte', nom: 'Mixte', pluriel: 'mixtes' },
+  ];
+
+  // Catégories jouées, avec leur nombre de matchs par équipe (tous : contre toutes les autres).
+  function categoriesJouees(r) {
+    const cat = r.cat || {};
+    return CATEGORIES.filter((c) => !(c.cle === 'mixte' && r.mixteEgalDouble))
+      .map((c) => Object.assign({}, c, { tous: !!(cat[c.cle] && cat[c.cle].tous), k: Number(cat[c.cle] && cat[c.cle].k) || 0 }))
+      .filter((c) => c.tous || c.k > 0);
+  }
+
+  function nomCategorie(cle) {
+    const c = CATEGORIES.find((x) => x.cle === cle);
+    return c ? c.nom : '';
+  }
+
+  // Catégorie d'un match (Simple, Double ou Mixte), '' pour les anciens tournois.
+  function categorieMatch(t, m) {
+    return m && m.categorie ? nomCategorie(m.categorie) : '';
+  }
+
+  // Catégorie des matchs de phase finale : celle choisie si elle est jouée, sinon la première jouée.
+  function categorieFinale(r) {
+    const jouees = categoriesJouees(r).map((c) => c.cle);
+    return jouees.includes(r.finaleCategorie) ? r.finaleCategorie : (jouees[0] || 'double');
+  }
 
   const LETTRES = 'ABCDEFGH';
   const nomPoule = (p) => 'Poule ' + LETTRES[p];
@@ -72,7 +110,7 @@
       nom: 'Tournoi loisir',
       cree: Date.now(),
       maj: Date.now(),
-      reglages: Object.assign({}, REGLAGES_DEFAUT),
+      reglages: JSON.parse(JSON.stringify(REGLAGES_DEFAUT)),
       equipes: [],
       matchs: [],
     };
@@ -133,8 +171,9 @@
     if (k < 1) return 'Chaque équipe doit jouer au moins 1 match.';
     if (k > n - 1) return 'Avec ' + n + ' équipes, chaque équipe peut jouer au plus ' + (n - 1) + ' matchs.';
     if (n % 2 === 1 && k % 2 === 1) {
+      const idees = Array.from(new Set([Math.max(2, k - 1), Math.min(n - 1, k + 1)]));
       return 'Avec un nombre impair d’équipes (' + n + '), chaque équipe doit jouer un nombre pair de matchs (par exemple '
-        + Math.max(2, k - 1) + ' ou ' + Math.min(n - 1, k + 1) + ').';
+        + idees.join(' ou ') + ').';
     }
     return null;
   }
@@ -160,19 +199,24 @@
   }
 
   // Ordonne les matchs pour laisser le plus de repos possible entre deux matchs d'une même équipe.
+  // Avec des catégories (3e élément des paires), elles sont aussi alternées au prorata.
   function ordonner(liste, n) {
     const reste = liste.map((p, i) => ({ p, i }));
     const dernier = new Array(n).fill(-1e9);
     const joues = new Array(n).fill(0);
     const plafondRepos = Math.max(2, Math.floor(n / 2));
+    const part = {};
+    const places = {};
+    liste.forEach((p) => { part[p[2]] = (part[p[2]] || 0) + 1 / liste.length; places[p[2]] = 0; });
     const sortie = [];
     while (reste.length) {
       let meilleur = 0;
       let cleMeilleure = null;
       for (let j = 0; j < reste.length; j++) {
-        const [a, b] = reste[j].p;
+        const [a, b, c] = reste[j].p;
         const repos = Math.min(sortie.length - dernier[a], sortie.length - dernier[b], plafondRepos);
-        const cle = [repos, -(joues[a] + joues[b]), -reste[j].i];
+        const retard = (sortie.length + 1) * part[c] - places[c];
+        const cle = [repos, Math.round(retard * 4) / 4, -(joues[a] + joues[b]), -reste[j].i];
         if (!cleMeilleure || comparer(cle, cleMeilleure) > 0) {
           meilleur = j;
           cleMeilleure = cle;
@@ -180,6 +224,7 @@
       }
       const p = reste.splice(meilleur, 1)[0].p;
       sortie.push(p);
+      places[p[2]]++;
       dernier[p[0]] = dernier[p[1]] = sortie.length - 1;
       joues[p[0]]++;
       joues[p[1]]++;
@@ -229,9 +274,19 @@
 
   // Message si les réglages du déroulement sont impossibles, sinon null.
   function verifierDeroulement(n, r) {
+    const cats = categoriesJouees(r);
+    if (!cats.length) return 'Choisis au moins une catégorie (simple, double ou mixte) avec au moins 1 match par équipe.';
     if (r.format === 'poules') {
       const err = verifierPoules(n, r.nbPoules);
       if (err) return err;
+      const tailles = Array.from(new Set(taillesPoules(n, r.nbPoules)));
+      for (const c of cats) {
+        if (c.tous) continue;
+        for (const taille of tailles) {
+          const e = verifierFormat(taille, c.k);
+          if (e) return 'En ' + c.nom.toLowerCase() + ', dans une poule de ' + taille + ' équipes : ' + e.charAt(0).toLowerCase() + e.slice(1);
+        }
+      }
       if (r.qualifiesParPoule > 0) {
         const plusPetite = Math.min(...taillesPoules(n, r.nbPoules));
         if (r.qualifiesParPoule > plusPetite) return 'La plus petite poule compte ' + plusPetite + ' équipes : on ne peut pas en qualifier ' + r.qualifiesParPoule + ' par poule.';
@@ -239,8 +294,11 @@
       }
       return null;
     }
-    const err = verifierFormat(n, r.matchsParEquipe);
-    if (err) return err;
+    for (const c of cats) {
+      if (c.tous) continue;
+      const e = verifierFormat(n, c.k);
+      if (e) return 'En ' + c.nom.toLowerCase() + ' : ' + e.charAt(0).toLowerCase() + e.slice(1);
+    }
     if (r.phaseFinale > n) return 'La phase finale demande ' + r.phaseFinale + ' équipes qualifiées, il n’y en a que ' + n + '.';
     return null;
   }
@@ -252,19 +310,32 @@
     if (erreur) throw new Error(erreur);
     delete t.finale;
     repartirPoules(t);
-    let liste;
+    // Une série de matchs par catégorie ; les mêmes adversaires se retrouvent d'une catégorie à l'autre.
+    const cats = categoriesJouees(r);
+    const liste = [];
     if (avecPoules(t)) {
-      liste = [];
       for (let p = 0; p < r.nbPoules; p++) {
         const membres = [];
         t.equipes.forEach((e, i) => { if (e.poule === p) membres.push(i); });
-        paires(membres.length, membres.length - 1).forEach(([x, y]) => liste.push([membres[x], membres[y]]));
+        cats.forEach((c) => {
+          paires(membres.length, c.tous ? membres.length - 1 : c.k).forEach(([x, y]) => liste.push([membres[x], membres[y], c.cle]));
+        });
       }
     } else {
-      liste = paires(n, r.matchsParEquipe);
+      cats.forEach((c) => {
+        paires(n, c.tous ? n - 1 : c.k).forEach(([x, y]) => liste.push([x, y, c.cle]));
+      });
     }
-    const ordre = ordonner(liste, n);
-    t.matchs = ordre.map(([a, b], i) => {
+    // Mélange les catégories au prorata de leur nombre de matchs (simples, doubles et mixtes alternent).
+    const total = {};
+    liste.forEach((x) => { total[x[2]] = (total[x[2]] || 0) + 1; });
+    const vu = {};
+    const melange = liste.map((x) => {
+      vu[x[2]] = (vu[x[2]] || 0) + 1;
+      return { x, pos: (vu[x[2]] - 0.5) / total[x[2]] };
+    }).sort((u, v) => u.pos - v.pos).map((u) => u.x);
+    const ordre = ordonner(melange, n);
+    t.matchs = ordre.map(([a, b, categorie], i) => {
       const m = {
         id: 'm' + uid(6),
         numero: null,
@@ -276,6 +347,7 @@
         debut: null,
         fin: null,
         sets: [],
+        categorie,
       };
       if (avecPoules(t)) m.poule = t.equipes[a].poule;
       return m;
@@ -805,7 +877,7 @@
     const m = {
       id: 'm' + uid(6), numero: null, ordre: plusGrand('ordre') + 1,
       a: v.a, b: v.b, statut: 'attente', terrain: null, debut: null, fin: null, sets: [],
-      phase: 'finale', tour: v.tour, slot: v.slot,
+      phase: 'finale', tour: v.tour, slot: v.slot, categorie: categorieFinale(t.reglages),
     };
     if (v.petite) m.petite = true;
     t.matchs.push(m);
@@ -1077,7 +1149,22 @@
   function normaliser(t) {
     if (!t || typeof t !== 'object') return null;
     t.nom = t.nom || 'Tournoi loisir';
+    const sansCategories = !(t.reglages && t.reglages.cat);
     t.reglages = Object.assign({}, REGLAGES_DEFAUT, t.reglages);
+    if (sansCategories) {
+      t.reglages.cat = {
+        simple: { k: 0, tous: false },
+        double: { k: Number(t.reglages.matchsParEquipe) || 1, tous: !!t.reglages.tousContreTous },
+        mixte: { k: 0, tous: false },
+      };
+    } else {
+      const cat = {};
+      CATEGORIES.forEach((c) => {
+        const x = t.reglages.cat[c.cle] || {};
+        cat[c.cle] = { k: Number(x.k) || 0, tous: !!x.tous };
+      });
+      t.reglages.cat = cat;
+    }
     t.equipes = enTableau(t.equipes).map((e) => Object.assign({}, e, { nom: e.nom || '', joueurs: e.joueurs || '' }));
     t.matchs = enTableau(t.matchs).map((m) => Object.assign({ terrain: null, debut: null, fin: null }, m, {
       sets: enTableau(m.sets).map((paire) => enTableau(paire).map(Number)),
@@ -1155,7 +1242,7 @@
   }
 
   global.BT = {
-    REGLAGES_DEFAUT, LIBELLES_STATUT, plafondAuto,
+    REGLAGES_DEFAUT, LIBELLES_STATUT, plafondAuto, CATEGORIES, categoriesJouees, nomCategorie, categorieMatch, categorieFinale,
     uid, esc, entier,
     nouveauTournoi, ajusterEquipes, equipe, nomEquipe, statut, texteFormat,
     verifierFormat, paires, ordonner, genererMatchs,

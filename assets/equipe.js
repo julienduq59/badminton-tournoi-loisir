@@ -191,7 +191,9 @@
     const pouleMoi = BT.avecPoules(t) ? e.poule : null;
     const lignes = BT.classement(t, pouleMoi);
     const moi = lignes.find((l) => l.equipe.id === e.id);
-    const etiquette = (m) => (m.phase === 'finale' ? '<span class="match-tour match-tour--finale">' + esc(BT.etiquetteMatch(t, m)) + '</span>' : '');
+    const etiquette = (m) => (BT.categorieMatch(t, m) ? '<span class="match-cat match-cat--' + esc(m.categorie) + '">' + esc(BT.categorieMatch(t, m)) + '</span>' : '')
+      + (m.phase === 'finale' ? '<span class="match-tour match-tour--finale">' + esc(BT.etiquetteMatch(t, m)) + '</span>' : '');
+    const categorie = (m) => (BT.categorieMatch(t, m) ? ' · ' + esc(BT.categorieMatch(t, m).toLowerCase()) : '');
     const nuls = BT.nulsPossibles(t);
     const st = BT.statut(t);
     const plan = BT.planifier(t, BT.dureeMatch(t));
@@ -264,14 +266,15 @@
         + '<div class="salle-bloc"><span class="salle-label">' + (actuel ? 'En cours dans la salle' : 'Pas encore commencé') + '</span>'
         + '<span class="salle-num">' + (actuel ? 'n° ' + actuel : '–') + '</span></div>'
         + '<div class="salle-bloc salle-bloc--moi"><span class="salle-label">' + (enCours ? 'Ton match' : 'Ton prochain match') + '</span>'
-        + '<span class="salle-num">' + (enCours ? 'n° ' + BT.numero(t, enCours) : numProchain ? 'n° ' + numProchain : '–') + '</span></div>'
+        + '<span class="salle-num">' + (enCours ? 'n° ' + BT.numero(t, enCours) : numProchain ? 'n° ' + numProchain : '–') + '</span>'
+        + ((enCours || prochain) && BT.categorieMatch(t, enCours || prochain) ? '<span class="salle-cat">' + esc(BT.categorieMatch(t, enCours || prochain)) + '</span>' : '') + '</div>'
         + (ecart ? '<p class="salle-ecart">' + ecart + '</p>' : '')
         + '</section>';
     }
 
     if (enCours) {
       h += '<section class="prochain prochain--en_cours"><div class="prochain-titre"><span class="point-direct"></span>'
-        + (enCours.phase === 'finale' ? esc(BT.etiquetteMatch(t, enCours)) + ' en cours' : 'Ton match en cours') + ', n° ' + BT.numero(t, enCours) + '</div>'
+        + (enCours.phase === 'finale' ? esc(BT.etiquetteMatch(t, enCours)) + ' en cours' : 'Ton match en cours') + ', n° ' + BT.numero(t, enCours) + categorie(enCours) + '</div>'
         + '<div class="prochain-adversaire">contre ' + nom(adversaire(enCours)) + '</div>'
         + '<div class="prochain-terrain">Terrain ' + enCours.terrain + '</div>'
         + '<p class="note" style="margin:6px 0 0">Commencé à ' + BT.heure(enCours.debut) + '</p>'
@@ -281,7 +284,7 @@
     if (prochain) {
       const vers = heurePrevue(prochain);
       h += '<section class="prochain' + (enCours ? ' prochain--suivant' : '') + '"><div class="prochain-titre">Ton prochain match'
-        + (prochain.phase === 'finale' ? ', ' + esc(BT.etiquetteMatch(t, prochain).toLowerCase()) : '') + ', n° ' + numProchain + '</div>'
+        + (prochain.phase === 'finale' ? ', ' + esc(BT.etiquetteMatch(t, prochain).toLowerCase()) : '') + ', n° ' + numProchain + categorie(prochain) + '</div>'
         + '<div class="prochain-adversaire">contre ' + nom(adversaire(prochain)) + '</div>'
         + (vers ? '<div class="prochain-terrain">Vers ' + vers + '<small> (estimation)</small></div>' : '')
         + '<p class="note" style="margin:6px 0 0">Le numéro du terrain s’affiche ici dès que le match est appelé.</p>'
