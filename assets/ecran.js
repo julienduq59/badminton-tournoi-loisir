@@ -1,12 +1,13 @@
 /* Écran d'affichage pour la salle : matchs en cours, prochains matchs, QR code, classement final. */
 (function () {
   'use strict';
-  const { esc, Store } = BT;
+  const { esc } = BT;
+  const D = BT.Donnees;
   const id = BT.idDansAdresse();
   const vue = new URLSearchParams(location.search).get('vue');
   const racine = document.getElementById('ecran');
-  let t = Store.charger(id);
-  let derniereMaj = t ? t.maj : 0;
+  let t = null;
+  let charge = false;
 
   const nom = (equipeId) => esc(BT.nomEquipe(t, equipeId));
   const heureMaintenant = () => new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -47,7 +48,7 @@
   function blocQr() {
     const url = BT.urlPage('equipe.html', { t: t.id });
     return '<div class="e-qr"><div class="qr">' + BT.qrSvg(url) + '</div>'
-      + '<p>Scanne pour suivre ton équipe<small>Prochain match, terrain, scores et classement</small></p></div>';
+      + '<p>Scanne pour suivre ton équipe<small>Prochain match, terrain, envoi du score et classement</small></p></div>';
   }
 
   function suite() {
@@ -95,7 +96,7 @@
   function rendre() {
     racine.className = 'ecran' + (vue === 'terrains' ? ' ecran--terrains' : vue === 'suite' ? ' ecran--suite' : '');
     if (!t) {
-      racine.innerHTML = '<div class="e-message">Ce tournoi n’est pas enregistré sur cet appareil</div>';
+      racine.innerHTML = '<div class="e-message">' + (charge ? 'Tournoi introuvable' : 'Chargement du tournoi') + '</div>';
       return;
     }
     document.title = t.nom + ' · Écran d’affichage';
@@ -108,23 +109,17 @@
     ajusterListe();
   }
 
-  Store.ecouter(id, (nouveau) => {
+  D.suivre(id, (nouveau, info) => {
+    if (!nouveau && info && info.erreur && t) return;
     t = nouveau;
-    derniereMaj = t ? t.maj : 0;
+    charge = true;
     rendre();
   });
 
-  // Filet de sécurité : relit le tournoi toutes les 3 secondes.
   setInterval(() => {
-    const frais = Store.charger(id);
-    if (frais && frais.maj !== derniereMaj) {
-      t = frais;
-      derniereMaj = frais.maj;
-      rendre();
-    }
     const h = document.getElementById('heure');
     if (h) h.textContent = heureMaintenant();
-  }, 3000);
+  }, 5000);
 
   window.addEventListener('resize', rendre);
 

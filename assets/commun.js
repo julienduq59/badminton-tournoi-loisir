@@ -3,22 +3,26 @@
 (function (global) {
   'use strict';
 
-  const PREFIXE = 'badminton:';
-  const CLE_INDEX = PREFIXE + 'tournois';
-  const cleTournoi = (id) => PREFIXE + 't:' + id;
-
+  // Exemple de départ : 15 équipes, 7 terrains, 1 set de 15 points avec 2 points d'écart.
   const REGLAGES_DEFAUT = {
-    nbEquipes: 8,
+    nbEquipes: 15,
     tousContreTous: true,
-    matchsParEquipe: 7,
+    matchsParEquipe: 14,
     sets: 1,
     auMeilleur: true,
-    points: 21,
+    points: 15,
     ecart2: true,
-    plafond: 30,
-    terrains: 3,
+    plafond: 21,
+    terrains: 7,
     appelAuto: true,
+    scoresJoueurs: true,
+    validationAuto: false,
   };
+
+  // Score maximum proposé par défaut : 21 points → 30, 15 points → 21.
+  function plafondAuto(points) {
+    return points + Math.ceil(points * 0.4);
+  }
 
   /* ---------- Outils ---------- */
 
@@ -439,38 +443,52 @@
     return r.sets % 2 === 0 || !r.auMeilleur || t.matchs.some((m) => m.statut === 'termine' && !resultat(m).gagnant);
   }
 
-  /* ---------- Stockage (dans ce navigateur) ---------- */
+  /* ---------- Saisie des scores ---------- */
 
-  function lireJSON(cle) {
-    try { return JSON.parse(global.localStorage.getItem(cle)); } catch (e) { return null; }
+  // paires : [[texteA, texteB], ...] lues dans un formulaire. Les lignes vides sont ignorées.
+  function lireSaisie(paires) {
+    const sets = [];
+    for (let i = 0; i < paires.length; i++) {
+      const va = String(paires[i][0]).trim();
+      const vb = String(paires[i][1]).trim();
+      if (va === '' && vb === '') continue;
+      if (va === '' || vb === '') return { erreur: 'Il manque un score au set ' + (i + 1) + '.' };
+      const a = Number(va);
+      const b = Number(vb);
+      if (!Number.isInteger(a) || !Number.isInteger(b) || a < 0 || b < 0 || a > 99 || b > 99) {
+        return { erreur: 'Le score du set ' + (i + 1) + ' doit être un nombre entre 0 et 99.' };
+      }
+      sets.push([a, b]);
+    }
+    if (!sets.length) return { erreur: 'Saisis au moins un set.' };
+    return { sets };
   }
 
-  const Store = {
-    liste() {
-      return lireJSON(CLE_INDEX) || [];
-    },
-    charger(id) {
-      return id ? lireJSON(cleTournoi(id)) : null;
-    },
-    enregistrer(t) {
-      t.maj = Date.now();
-      global.localStorage.setItem(cleTournoi(t.id), JSON.stringify(t));
-      const liste = Store.liste().filter((x) => x.id !== t.id);
-      liste.unshift({ id: t.id, nom: t.nom, maj: t.maj, statut: statut(t), equipes: t.equipes.length });
-      global.localStorage.setItem(CLE_INDEX, JSON.stringify(liste));
-      return t;
-    },
-    supprimer(id) {
-      global.localStorage.removeItem(cleTournoi(id));
-      global.localStorage.setItem(CLE_INDEX, JSON.stringify(Store.liste().filter((x) => x.id !== id)));
-    },
-    // Prévient quand le tournoi est modifié depuis un autre onglet ou une autre fenêtre.
-    ecouter(id, rappel) {
-      const gestionnaire = (e) => { if (e.key === cleTournoi(id)) rappel(Store.charger(id)); };
-      global.addEventListener('storage', gestionnaire);
-      return () => global.removeEventListener('storage', gestionnaire);
-    },
-  };
+  function memesSets(x, y) {
+    return JSON.stringify(x || []) === JSON.stringify(y || []);
+  }
+
+  /* ---------- Données reçues du stockage ou de la base en ligne ---------- */
+
+  function enTableau(x) {
+    if (Array.isArray(x)) return x.filter((v) => v != null);
+    if (x && typeof x === 'object') {
+      return Object.keys(x).sort((a, b) => Number(a) - Number(b)).map((k) => x[k]).filter((v) => v != null);
+    }
+    return [];
+  }
+
+  // Remet en forme un tournoi lu en ligne (la base supprime les tableaux vides et les valeurs nulles).
+  function normaliser(t) {
+    if (!t || typeof t !== 'object') return null;
+    t.nom = t.nom || 'Tournoi loisir';
+    t.reglages = Object.assign({}, REGLAGES_DEFAUT, t.reglages);
+    t.equipes = enTableau(t.equipes).map((e) => ({ id: e.id, nom: e.nom || '', joueurs: e.joueurs || '' }));
+    t.matchs = enTableau(t.matchs).map((m) => Object.assign({ terrain: null, debut: null, fin: null }, m, {
+      sets: enTableau(m.sets).map((paire) => enTableau(paire).map(Number)),
+    }));
+    return t;
+  }
 
   /* ---------- Affichage ---------- */
 
@@ -504,13 +522,14 @@
   }
 
   global.BT = {
-    REGLAGES_DEFAUT, LIBELLES_STATUT,
+    REGLAGES_DEFAUT, LIBELLES_STATUT, plafondAuto,
     uid, esc, entier,
     nouveauTournoi, ajusterEquipes, equipe, nomEquipe, statut, texteFormat,
     verifierFormat, paires, ordonner, genererMatchs,
     matchsEnCours, matchsEnAttente, terrainsLibres, remplirTerrains, lancer, demarre, prochains, reporter,
     resultat, texteScore, verifierSet, verifierScore, enregistrerScore,
     classement, nulsPossibles, podiumHtml, signe,
-    Store, urlPage, qrSvg, heure, idDansAdresse, ICONE,
+    lireSaisie, memesSets, enTableau, normaliser,
+    urlPage, qrSvg, heure, idDansAdresse, ICONE,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

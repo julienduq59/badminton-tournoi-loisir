@@ -6,8 +6,8 @@
   <title>Tournoi de badminton loisir</title>
   <meta name="description" content="Organisation d'un tournoi de badminton loisir : équipes, terrains, scores, écran d'affichage pour la salle et classement.">
   <meta name="theme-color" content="#0a3d2b">
-  <link rel="icon" href="assets/volant.svg?v=20261117" type="image/svg+xml">
-  <link rel="stylesheet" href="assets/style.css?v=20261117">
+  <link rel="icon" href="assets/volant.svg?v=20261117-2" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/style.css?v=20261117-2">
 </head>
 <body class="page-accueil">
   <header class="barre">
@@ -17,17 +17,20 @@
   <main class="contenu">
     <section class="intro">
       <h1>Organise ton tournoi de badminton</h1>
-      <p>Tu règles le nombre d'équipes, de matchs, de sets, de points et de terrains. Le site prépare les matchs, les appelle sur les terrains libres et tient le classement à jour.</p>
+      <p>Tu règles le nombre d'équipes, de matchs, de sets, de points et de terrains. Le site prépare les matchs, les appelle sur les terrains libres et tient le classement à jour. Les joueurs suivent leur équipe et envoient leurs scores depuis leur téléphone.</p>
       <button class="bouton accent grand" type="button" id="nouveau">Créer un tournoi</button>
+      <p class="intro-erreur" id="erreur" role="alert" hidden></p>
     </section>
 
     <h2>Mes tournois</h2>
     <ul class="liste-tournois" id="liste"></ul>
     <p class="vide" id="vide" hidden>Aucun tournoi pour l'instant.</p>
-    <p class="note">Les tournois sont enregistrés dans ce navigateur, sur cet appareil.</p>
+    <p class="note" id="note-stockage"></p>
   </main>
 
-  <script src="assets/commun.js?v=20261117"></script>
-  <script src="assets/accueil.js?v=20261117"></script>
+  <script src="assets/config.js?v=20261117-2"></script>
+  <script src="assets/commun.js?v=20261117-2"></script>
+  <script src="assets/donnees.js?v=20261117-2"></script>
+  <script src="assets/accueil.js?v=20261117-2"></script>
 </body>
 </html>

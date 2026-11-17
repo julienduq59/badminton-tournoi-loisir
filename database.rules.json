@@ -1,0 +1,38 @@
+{
+  "rules": {
+    "tournois": {
+      "$id": {
+        ".read": true,
+        "donnees": {
+          ".write": "auth != null && root.child('tournois').child($id).child('admins').child(auth.uid).val() === true"
+        },
+        "admins": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && newData.val() === true && root.child('cles').child($id).exists() && newData.parent().parent().parent().parent().child('preuves').child($id).child($uid).val() === root.child('cles').child($id).val()"
+          }
+        },
+        "propositions": {
+          ".write": "auth != null && root.child('tournois').child($id).child('admins').child(auth.uid).val() === true",
+          "$match": {
+            "$equipe": {
+              ".write": "auth != null",
+              ".validate": "newData.hasChildren(['sets', 'date', 'uid']) && newData.child('uid').val() === auth.uid"
+            }
+          }
+        }
+      }
+    },
+    "cles": {
+      "$id": {
+        ".write": "auth != null && !data.exists() && newData.isString() && newData.val().length >= 20"
+      }
+    },
+    "preuves": {
+      "$id": {
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      }
+    }
+  }
+}

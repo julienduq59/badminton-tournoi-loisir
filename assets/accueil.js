@@ -1,21 +1,25 @@
-/* Page d'accueil : liste des tournois enregistrés et création. */
+/* Page d'accueil : tournois gérés depuis cet appareil et création. */
 (function () {
   'use strict';
-  const { esc, Store } = BT;
+  const { esc } = BT;
+  const D = BT.Donnees;
 
   document.getElementById('icone').outerHTML = BT.ICONE;
+  document.getElementById('note-stockage').textContent = D.enLigne
+    ? 'Ce sont les tournois que tu gères depuis cet appareil. Pour en gérer un depuis un autre téléphone, utilise son lien organisateur (onglet QR code).'
+    : 'Les tournois sont enregistrés dans ce navigateur, sur cet appareil.';
 
   function dateCourte(ts) {
     return new Date(ts).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
   }
 
   function rendre() {
-    const liste = Store.liste();
+    const liste = D.mesTournois();
     document.getElementById('vide').hidden = liste.length > 0;
     document.getElementById('liste').innerHTML = liste.map((x) => `
       <li class="tournoi-ligne">
         <a class="nom" href="tournoi.html?t=${esc(x.id)}">${esc(x.nom)}</a>
-        <span class="pastille pastille--${esc(x.statut)}">${esc(BT.LIBELLES_STATUT[x.statut] || '')}</span>
+        ${x.statut ? `<span class="pastille pastille--${esc(x.statut)}">${esc(BT.LIBELLES_STATUT[x.statut] || '')}</span>` : ''}
         <span class="infos">${x.equipes ? esc(x.equipes) + ' équipes, ' : ''}modifié le ${esc(dateCourte(x.maj))}</span>
         <span class="actions">
           <a class="bouton petit principal" href="tournoi.html?t=${esc(x.id)}">Ouvrir</a>
@@ -25,22 +29,38 @@
       </li>`).join('');
   }
 
-  document.getElementById('nouveau').addEventListener('click', () => {
-    const t = BT.nouveauTournoi();
-    Store.enregistrer(t);
-    location.href = 'tournoi.html?t=' + encodeURIComponent(t.id) + '#reglages';
+  const boutonNouveau = document.getElementById('nouveau');
+  boutonNouveau.addEventListener('click', async () => {
+    const erreur = document.getElementById('erreur');
+    erreur.hidden = true;
+    boutonNouveau.disabled = true;
+    boutonNouveau.textContent = 'Création en cours';
+    try {
+      const t = BT.nouveauTournoi();
+      await D.creer(t);
+      location.href = 'tournoi.html?t=' + encodeURIComponent(t.id) + '#reglages';
+    } catch (e) {
+      erreur.textContent = 'Création impossible. ' + (e && e.message ? e.message : 'Vérifie la connexion internet.');
+      erreur.hidden = false;
+      boutonNouveau.disabled = false;
+      boutonNouveau.textContent = 'Créer un tournoi';
+    }
   });
 
-  document.getElementById('liste').addEventListener('click', (e) => {
+  document.getElementById('liste').addEventListener('click', async (e) => {
     const bouton = e.target.closest('[data-supprimer]');
     if (!bouton) return;
     const id = bouton.dataset.supprimer;
-    const t = Store.charger(id);
-    const nom = t ? t.nom : 'ce tournoi';
-    if (confirm('Supprimer « ' + nom + ' » ? Les équipes, les matchs et les scores seront effacés de cet appareil.')) {
-      Store.supprimer(id);
-      rendre();
+    const entree = D.mesTournois().find((x) => x.id === id);
+    const nom = entree ? entree.nom : 'ce tournoi';
+    if (!confirm('Supprimer « ' + nom + ' » ? Les équipes, les matchs et les scores seront effacés.')) return;
+    bouton.disabled = true;
+    try {
+      await D.supprimer(id);
+    } catch (err) {
+      alert('Suppression impossible. ' + (err && err.message ? err.message : ''));
     }
+    rendre();
   });
 
   window.addEventListener('storage', rendre);

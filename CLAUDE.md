@@ -11,16 +11,32 @@ commandes, commits et textes du site.
 
 ## Fonctionnement
 
-- `assets/commun.js` contient toute la logique, sans dépendance au DOM (testable avec Node) :
+- `assets/commun.js` contient la logique, sans dépendance au DOM (testable avec Node) :
   calendrier (`paires`, `ordonner`, `genererMatchs`), appel des matchs (`choisir`,
-  `remplirTerrains`, `prochains`), scores (`verifierScore`, `enregistrerScore`),
-  classement (`classement`) et stockage (`Store`).
+  `remplirTerrains`, `prochains`), scores (`verifierScore`, `enregistrerScore`, `lireSaisie`),
+  classement (`classement`) et remise en forme des données lues en ligne (`normaliser`).
 - `prochains()` simule l'appel automatique avec la même règle que `remplirTerrains()` :
   l'ordre affiché « à suivre » doit rester identique à l'ordre réel des appels.
-- Données : un objet JSON par tournoi dans le `localStorage` (`badminton:t:<id>`), liste dans
-  `badminton:tournois`. Les autres onglets se mettent à jour avec l'événement `storage`.
-- Pas encore de synchronisation en ligne : le QR code mène à `equipe.html`, qui ne trouve
-  le tournoi que sur l'appareil de l'organisateur. C'est la prochaine étape.
+- `assets/donnees.js` (`BT.Donnees`) cache le stockage : mode local (localStorage) quand
+  `assets/config.js` vaut null, mode en ligne (Firebase Realtime Database, SDK compat chargé
+  depuis gstatic) quand la configuration est remplie. Toute modification du tournoi passe par
+  `Donnees.modifier(id, fn)` (transaction en ligne) : `fn` reçoit la version la plus récente.
+- Données en ligne : `tournois/<id>/donnees` (le tournoi), `tournois/<id>/propositions/<match>/<équipe>`
+  (scores envoyés par les joueurs, rangés dans l'ordre du match), `tournois/<id>/admins/<uid>`.
+  Un appareil devient organisateur en prouvant la clé du tournoi (`cles/<id>`, illisible) via
+  `preuves/<id>/<uid>` ; la clé circule dans le lien organisateur `tournoi.html?t=<id>#cle=<clé>`.
+  Connexion anonyme Firebase pour tous les appareils qui écrivent.
+- Règles de sécurité : `database.rules.json` (à recopier dans la console Firebase à chaque changement).
+
+## Tests
+
+- Logique : script Node qui charge `assets/commun.js` et joue des tournois complets.
+- Pages : Playwright (Chromium) sur un serveur local, en mode local puis en mode en ligne avec
+  l'émulateur Firebase (`firebase emulators:start --only auth,database --project demo-badminton`
+  avec `database.rules.json`, lancé sans variables de proxy ; config de test injectée en
+  interceptant `assets/config.js`, SDK servi depuis le paquet npm `firebase@10.12.2`).
+  Vérifier : envoi de score par un téléphone, validation par un deuxième organisateur,
+  saisies simultanées, refus des écritures d'un joueur.
 
 ## Conventions
 
@@ -28,5 +44,5 @@ commandes, commits et textes du site.
   plusieurs versions le même jour). À chaque modification, mettre à jour la date dans toutes
   les pages, sinon les navigateurs gardent l'ancienne version en cache.
 - Textes du site : tutoiement, pas de point d'exclamation, pas de tiret long.
-- Tester un tournoi complet dans Chromium (Playwright) avant chaque envoi : création,
-  lancement, saisie de tous les scores, écran d'affichage, page des équipes.
+- Tester un tournoi complet avant chaque envoi : création, lancement, scores envoyés par les
+  téléphones et validés, saisie de tous les scores, écran d'affichage, page des équipes.

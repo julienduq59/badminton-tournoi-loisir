@@ -6,8 +6,8 @@
   <title>Gestion du tournoi · Badminton</title>
   <meta name="robots" content="noindex">
   <meta name="theme-color" content="#0a3d2b">
-  <link rel="icon" href="assets/volant.svg?v=20261117" type="image/svg+xml">
-  <link rel="stylesheet" href="assets/style.css?v=20261117">
+  <link rel="icon" href="assets/volant.svg?v=20261117-2" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/style.css?v=20261117-2">
 </head>
 <body class="page-orga">
   <header class="barre">
@@ -16,6 +16,7 @@
     <div class="barre-titre">
       <h1 id="titre">Tournoi</h1>
       <span class="pastille" id="statut"></span>
+      <span class="connexion" id="connexion" hidden></span>
     </div>
     <div class="barre-actions">
       <a class="bouton accent" id="lien-ecran" target="_blank" rel="noopener">Écran d'affichage</a>
@@ -23,7 +24,7 @@
   </header>
 
   <nav class="onglets" role="tablist" aria-label="Sections du tournoi">
-    <button type="button" role="tab" data-onglet="direct">Terrains</button>
+    <button type="button" role="tab" data-onglet="direct">Terrains <span class="badge" id="badge-scores" hidden></span></button>
     <button type="button" role="tab" data-onglet="matchs">Matchs</button>
     <button type="button" role="tab" data-onglet="classement">Classement</button>
     <button type="button" role="tab" data-onglet="reglages">Réglages</button>
@@ -42,6 +43,7 @@
     <form id="form-score" novalidate>
       <h2 id="score-titre">Score</h2>
       <p class="note" id="score-format"></p>
+      <div class="score-recus" id="score-recus" hidden></div>
       <div class="score-grille" id="score-grille"></div>
       <div class="score-message" id="score-message" hidden></div>
       <div class="dialogue-actions">
@@ -52,8 +54,12 @@
     </form>
   </dialog>
 
-  <script src="assets/vendor/qrcode.js?v=20261117"></script>
-  <script src="assets/commun.js?v=20261117"></script>
-  <script src="assets/tournoi.js?v=20261117"></script>
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <script src="assets/vendor/qrcode.js?v=20261117-2"></script>
+  <script src="assets/config.js?v=20261117-2"></script>
+  <script src="assets/commun.js?v=20261117-2"></script>
+  <script src="assets/donnees.js?v=20261117-2"></script>
+  <script src="assets/tournoi.js?v=20261117-2"></script>
 </body>
 </html>
