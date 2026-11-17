@@ -1072,6 +1072,7 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .encadre .actions { margin-top: 10px; }
 .annonce-equipe { margin-bottom: 14px; padding: 12px 16px; border-radius: var(--rayon); background: var(--jaune); color: var(--vert-900); font-weight: 750; }
 .annonce-equipe--pause { background: #fde8e6; color: #7a1d16; }
+.annonce-equipe--forfait { background: var(--rouge); color: #fff; }
 .ecran--annonce { grid-template-rows: auto auto minmax(0, 1fr); }
 .e-annonce {
   grid-column: 1 / -1;
@@ -1197,6 +1198,90 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .chiffres-liste { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; padding: 14px 16px; background: var(--carte); border: 1px solid var(--bord); border-radius: var(--rayon); }
 .chiffres-liste dt { font-weight: 750; color: var(--encre-douce); font-size: .9rem; }
 .chiffres-liste dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+
+/* ---------- Réglages : blocs alignés ---------- */
+
+.reglages { padding: 4px 24px 0; }
+.r-bloc { padding: 22px 0; border-top: 1px solid var(--bord); }
+.r-bloc:first-child { border-top: 0; }
+.r-bloc > h2, .r-bloc > .titre-actions { margin: 0 0 14px; }
+.r-bloc > .titre-actions h2 { margin: 0; }
+.r-bloc h2 { font-size: 1.1rem; }
+/* Colonnes de même largeur dans tous les blocs : les champs s'alignent d'un bloc à l'autre. */
+.r-grille { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px 22px; align-items: start; }
+.r-grille .champ { min-width: 0; }
+.r-grille .champ > label:not(.case) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.champ--large { grid-column: span 2; }
+.r-grille .case, .reglages .champ > label.case { margin-top: 4px; font-size: .92rem; font-weight: 500; }
+/* Unité écrite dans le champ : tous les champs gardent la même largeur. */
+.avec-unite { position: relative; }
+.champ .avec-unite input { padding-right: 52px; }
+.avec-unite span { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--encre-douce); font-weight: 650; font-size: .9rem; pointer-events: none; }
+.r-sous-bloc { margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--bord); }
+.r-sous-bloc .r-grille { margin-top: 14px; }
+.r-cases { display: grid; gap: 10px; }
+
+/* Matchs de chaque équipe : une ligne par catégorie */
+.r-categories { display: grid; gap: 8px; margin-top: 14px; }
+.r-cat {
+  display: grid;
+  grid-template-columns: 220px 112px 112px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px 22px;
+  padding: 10px 16px;
+  border-radius: var(--rayon-petit);
+  background: var(--vert-50);
+  border: 1px solid var(--vert-100);
+}
+.r-cat[hidden] { display: none; }
+.r-cat-nom { font-weight: 750; }
+.r-mini { display: grid; gap: 3px; }
+.r-mini span { font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--encre-douce); }
+.r-mini input {
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 10px;
+  border: 1px solid var(--bord);
+  border-radius: var(--rayon-petit);
+  background: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.r-mini input:focus { border-color: var(--vert-500); outline: 2px solid var(--vert-100); outline-offset: 0; }
+.r-mini input:disabled { background: #f4f6f5; color: var(--encre-douce); }
+.r-cat .case { font-size: .92rem; }
+#r-matchs-erreur { margin: 10px 0 0; }
+.r-note { margin: 10px 0 0; font-size: .86rem; }
+
+.reglages .resume-reglages { margin: 0; }
+.reglages .horaires-estimation { margin-top: 14px; }
+/* Enregistrer reste visible en bas de l'écran pendant qu'on fait défiler le formulaire. */
+.r-enregistrer {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin: 0 -24px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--bord);
+  border-radius: 0 0 var(--rayon) var(--rayon);
+  background: rgba(255, 255, 255, .96);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+@media (max-width: 900px) {
+  .r-grille { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .reglages { padding: 0 16px; }
+  /* Deux petits champs par ligne ; les listes et les champs longs prennent toute la largeur. */
+  .r-grille { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px; }
+  .champ--large, .champ--plein-tel { grid-column: 1 / -1; }
+  .r-grille .champ > label:not(.case) { font-size: .9rem; }
+  .r-cat { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 10px 12px; gap: 8px 12px; }
+  .r-cat-nom, .r-cat .case { grid-column: 1 / -1; }
+  .r-enregistrer { margin: 0 -16px; padding: 12px 16px; }
+  .r-enregistrer .bouton { flex: 1; }
+}
 
 /* ---------- Horaires, terrains fermés, règles ---------- */
 

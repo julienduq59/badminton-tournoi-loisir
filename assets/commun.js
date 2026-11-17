@@ -53,7 +53,12 @@
   function categoriesJouees(r) {
     const cat = r.cat || {};
     return CATEGORIES.filter((c) => !(c.cle === 'mixte' && r.mixteEgalDouble))
-      .map((c) => Object.assign({}, c, { tous: !!(cat[c.cle] && cat[c.cle].tous), k: Number(cat[c.cle] && cat[c.cle].k) || 0 }))
+      .map((c) => {
+        const x = cat[c.cle] || {};
+        const k = Number(x.k) || 0;
+        // max : nombre maximum de matchs par équipe (0 ou absent = le minimum).
+        return Object.assign({}, c, { tous: !!x.tous, k, max: Number(x.max) > 0 ? Number(x.max) : k });
+      })
       .filter((c) => c.tous || c.k > 0);
   }
 
@@ -175,16 +180,34 @@
     if (n < 2) return 'Il faut au moins 2 équipes.';
     if (k < 1) return 'Chaque équipe doit jouer au moins 1 match.';
     if (k > n - 1) return 'Avec ' + n + ' équipes, chaque équipe peut jouer au plus ' + (n - 1) + ' matchs.';
-    if (n % 2 === 1 && k % 2 === 1) {
-      const idees = Array.from(new Set([Math.max(2, k - 1), Math.min(n - 1, k + 1)]));
-      return 'Avec un nombre impair d’équipes (' + n + '), chaque équipe doit jouer un nombre pair de matchs (par exemple '
-        + idees.join(' ou ') + ').';
+    return null;
+  }
+
+  // Nombre impair d'équipes et de matchs : impossible que toutes jouent exactement k matchs
+  // (les matchs se jouent à deux). Chaque équipe en joue au moins k, une seule en joue k + 1.
+  const unMatchDePlus = (n, k) => n % 2 === 1 && k % 2 === 1;
+
+  const pgcd = (a, b) => (b ? pgcd(b, a % b) : a);
+
+  // Le maximum doit laisser la place au match en plus quand le nombre d'équipes est impair.
+  function verifierMaximum(n, c, poule) {
+    if (c.max < c.k) return 'Le maximum (' + c.max + ') est plus petit que le minimum (' + c.k + ').';
+    if (unMatchDePlus(n, c.k) && c.max < c.k + 1) {
+      return 'Avec ' + n + ' équipes' + (poule ? ' dans la poule' : '') + ', elles ne peuvent pas toutes jouer exactement ' + c.k
+        + ' match' + (c.k > 1 ? 's' : '') + ', car les matchs se jouent à deux. Mets un maximum d’au moins ' + (c.k + 1)
+        + ' : une seule équipe jouera ' + (c.k + 1) + ' matchs.';
     }
     return null;
   }
 
+  // Maximum à prévoir pour un minimum donné (le match en plus d'un nombre impair d'équipes).
+  function maximumNecessaire(tailles, k) {
+    return tailles.some((x) => unMatchDePlus(x, k)) ? k + 1 : k;
+  }
+
   // Paires d'équipes (indices) pour que chaque équipe joue exactement k matchs.
-  function paires(n, k) {
+  // plus : équipe qui joue le match en plus quand n et k sont impairs.
+  function paires(n, k, plus) {
     const res = [];
     if (n % 2 === 0) {
       // Méthode du cercle : chaque tour fait jouer toutes les équipes une fois.
@@ -196,8 +219,19 @@
       }
     } else {
       // Nombre impair : chaque équipe rencontre ses voisines à distance 1, 2… k/2.
-      for (let d = 1; d <= k / 2; d++) {
+      const pairs = k - (k % 2);
+      for (let d = 1; d <= pairs / 2; d++) {
         for (let i = 0; i < n; i++) res.push([i, (i + d) % n]);
+      }
+      if (k % 2 === 1) {
+        // Un tour de plus sur une distance encore libre, première avec n (cycle de toutes les équipes) :
+        // les équipes jouent deux par deux le long du cycle, la dernière joue contre la première.
+        let d = pairs / 2 + 1;
+        while (pgcd(d, n) !== 1) d++;
+        const debut = ((plus || 0) % n + n) % n;
+        const cycle = Array.from({ length: n }, (_, i) => (debut + i * d) % n);
+        for (let i = 0; i + 1 < n; i += 2) res.push([cycle[i], cycle[i + 1]]);
+        res.push([cycle[n - 1], cycle[0]]);
       }
     }
     return res;
@@ -288,7 +322,7 @@
       for (const c of cats) {
         if (c.tous) continue;
         for (const taille of tailles) {
-          const e = verifierFormat(taille, c.k);
+          const e = verifierFormat(taille, c.k) || verifierMaximum(taille, c, true);
           if (e) return 'En ' + c.nom.toLowerCase() + ', dans une poule de ' + taille + ' équipes : ' + e.charAt(0).toLowerCase() + e.slice(1);
         }
       }
@@ -301,7 +335,7 @@
     }
     for (const c of cats) {
       if (c.tous) continue;
-      const e = verifierFormat(n, c.k);
+      const e = verifierFormat(n, c.k) || verifierMaximum(n, c, false);
       if (e) return 'En ' + c.nom.toLowerCase() + ' : ' + e.charAt(0).toLowerCase() + e.slice(1);
     }
     if (r.phaseFinale > n) return 'La phase finale demande ' + r.phaseFinale + ' équipes qualifiées, il n’y en a que ' + n + '.';
@@ -332,13 +366,20 @@
       for (let p = 0; p < r.nbPoules; p++) {
         const membres = [];
         t.equipes.forEach((e, i) => { if (e.poule === p) membres.push(i); });
+        let plus = 0;
         cats.forEach((c) => {
-          paires(membres.length, c.tous ? membres.length - 1 : c.k).forEach(([x, y]) => liste.push([membres[x], membres[y], c.cle]));
+          const k = c.tous ? membres.length - 1 : c.k;
+          paires(membres.length, k, plus).forEach(([x, y]) => liste.push([membres[x], membres[y], c.cle]));
+          if (unMatchDePlus(membres.length, k)) plus++;
         });
       }
     } else {
+      // L'équipe qui joue le match en plus change d'une catégorie à l'autre.
+      let plus = 0;
       cats.forEach((c) => {
-        paires(n, c.tous ? n - 1 : c.k).forEach(([x, y]) => liste.push([x, y, c.cle]));
+        const k = c.tous ? n - 1 : c.k;
+        paires(n, k, plus).forEach(([x, y]) => liste.push([x, y, c.cle]));
+        if (unMatchDePlus(n, k)) plus++;
       });
     }
     // Mélange les catégories au prorata de leur nombre de matchs (simples, doubles et mixtes alternent).
@@ -1482,7 +1523,7 @@
       const cat = {};
       CATEGORIES.forEach((c) => {
         const x = t.reglages.cat[c.cle] || {};
-        cat[c.cle] = { k: Number(x.k) || 0, tous: !!x.tous };
+        cat[c.cle] = { k: Number(x.k) || 0, tous: !!x.tous, max: Number(x.max) || 0 };
       });
       t.reglages.cat = cat;
     }
@@ -1530,9 +1571,13 @@
       der.push(n + ' équipes, toutes dans la même poule.');
     }
     const cats = categoriesJouees(r);
-    const morceaux = cats.map((c) => (c.tous
-      ? 'un ' + c.nom.toLowerCase() + ' contre chaque autre équipe' + (poules ? ' de sa poule' : '')
-      : c.k + ' ' + (c.k > 1 ? c.pluriel : c.nom.toLowerCase())));
+    const taillesImpaires = (poules ? taillesPoules(n, r.nbPoules) : [n]).filter((x) => x % 2 === 1);
+    const morceaux = cats.map((c) => {
+      if (c.tous) return 'un ' + c.nom.toLowerCase() + ' contre chaque autre équipe' + (poules ? ' de sa poule' : '');
+      const plus = c.k % 2 === 1 && taillesImpaires.length;
+      return c.k + ' ' + (c.k > 1 ? c.pluriel : c.nom.toLowerCase())
+        + (plus ? ' (' + (c.k + 1) + ' pour une équipe' + (poules ? ' par poule impaire' : '') + ', le nombre d’équipes étant impair)' : '');
+    });
     if (morceaux.length) der.push('Chaque équipe joue ' + listeEt(morceaux) + '.');
     if (r.mixteEgalDouble && cats.some((c) => c.cle === 'double')) der.push('Pas de différence entre double et mixte.');
     const Q = nbQualifies(t);
@@ -1767,7 +1812,7 @@
     planifier, dureeMatch, dureeReglee, dureeSelonFormat, finEstimee, dureeEstimee, heureDuJour, heureFinSalle, depassementSalle, prioriser,
     resultat, texteScore, verifierSet, verifierScore, enregistrerScore,
     setsForfait, enregistrerForfait, abandonEquipe, annulerAbandon, effacerResultat,
-    nomPoule, avecPoules, listePoules, taillesPoules, verifierPoules, verifierDeroulement,
+    nomPoule, avecPoules, listePoules, taillesPoules, verifierPoules, verifierDeroulement, unMatchDePlus, maximumNecessaire,
     nbQualifies, qualifies, phasePoulesFinie, lancerPhaseFinale, annulerPhaseFinale, avancerTableau,
     nbTours, nomTourIndex, matchTableau, participants, issue, tableauTermine, finaleAttendue,
     etiquetteMatch, formatMatch, classementPoules, classementFinal, tableauHtml,

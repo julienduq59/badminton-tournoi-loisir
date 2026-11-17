@@ -302,7 +302,7 @@
     if (debut === null) {
       h += '.</p>';
       if (r.heureFin) h += '<p>Indique l’heure de début pour savoir si le tournoi tient avant la fin de la salle.</p>';
-      if (auto) h += '<p class="note">Si tu connais la durée habituelle de vos matchs, indique-la dans « Durée moyenne prévue d’un match » pour affiner.</p>';
+      if (auto) h += '<p class="note">Si tu connais la durée habituelle de vos matchs, indique-la dans « Durée prévue d’un match » pour affiner.</p>';
       return h;
     }
     const fin = debut + duree;
@@ -315,7 +315,7 @@
       const marge = Math.floor((BT.heureFinSalle(tt, debut) - fin) / 60000);
       h += '<p class="horaires-ok">Ça tient avant la fin de la salle (' + esc(r.heureFin) + ')' + (marge >= 1 ? ', avec ' + dureeTexte(marge * 60000) + ' de marge' : '') + '.</p>';
     }
-    if (auto) h += '<p class="note">Si tu connais la durée habituelle de vos matchs, indique-la dans « Durée moyenne prévue d’un match » pour affiner.</p>';
+    if (auto) h += '<p class="note">Si tu connais la durée habituelle de vos matchs, indique-la dans « Durée prévue d’un match » pour affiner.</p>';
     return h;
   }
 
@@ -831,12 +831,19 @@
 
   function copieReglages() {
     const r = JSON.parse(JSON.stringify(Object.assign({}, BT.REGLAGES_DEFAUT, t.reglages)));
+    const tailles = r.format === 'poules' ? BT.taillesPoules(t.equipes.length, r.nbPoules) : [t.equipes.length];
+    const maxManuel = {};
+    BT.CATEGORIES.forEach((c) => {
+      const x = r.cat[c.cle] || {};
+      if (Number(x.max) > BT.maximumNecessaire(tailles, Number(x.k) || 0)) maxManuel[c.cle] = true;
+    });
     return {
       nom: t.nom,
       reglages: r,
       equipes: t.equipes.map((e) => Object.assign({}, e)),
       reserve: [],
       plafondManuel: r.plafond !== BT.plafondAuto(r.points),
+      maxManuel,
     };
   }
 
@@ -850,88 +857,103 @@
     const b = brouillon;
     const r = b.reglages;
     const nombre = (idChamp, valeur, min, max) => '<input type="number" id="' + idChamp + '" value="' + valeur + '" min="' + min + '" max="' + max + '" inputmode="numeric">';
-    $('#reglages').innerHTML = '<form id="form-reglages" class="carte" novalidate>'
-      + '<h2>Le tournoi</h2>'
-      + '<div class="grille-champs"><div class="champ"><label for="r-nom">Nom du tournoi</label>'
-      + '<input type="text" id="r-nom" maxlength="60" value="' + esc(b.nom) + '"></div>'
-      + '<div class="champ"><label for="r-debut">Heure de début</label><input type="time" id="r-debut" value="' + esc(r.heureDebut || '') + '">'
-      + '<span class="aide">Facultatif. Sert à estimer l’heure de fin.</span></div>'
-      + '<div class="champ"><label for="r-fin">Fin de la salle</label><input type="time" id="r-fin" value="' + esc(r.heureFin || '') + '">'
-      + '<span class="aide">Facultatif. Heure à laquelle il faut rendre la salle. Le site te prévient si le tournoi risque de déborder.</span></div></div>'
-      + '<h2>Déroulement</h2>'
-      + '<div class="grille-champs">'
-      + '<div class="champ"><label for="r-equipes">Nombre d’équipes</label>' + nombre('r-equipes', b.equipes.length, 2, 64) + '</div>'
-      + '<div class="champ"><label for="r-format">Organisation</label>'
-      + '<select id="r-format"><option value="championnat"' + (r.format !== 'poules' ? ' selected' : '') + '>Une seule poule, tous ensemble</option>'
+    const avecUnite = (html, unite) => '<div class="avec-unite">' + html + '<span>' + unite + '</span></div>';
+    $('#reglages').innerHTML = '<form id="form-reglages" class="carte reglages" novalidate>'
+      // Le tournoi
+      + '<section class="r-bloc"><h2>Le tournoi</h2><div class="r-grille">'
+      + '<div class="champ champ--large"><label for="r-nom">Nom du tournoi</label><input type="text" id="r-nom" maxlength="60" value="' + esc(b.nom) + '"></div>'
+      + '<div class="champ champ--plein-tel"><label for="r-format">Organisation</label>'
+      + '<select id="r-format"><option value="championnat"' + (r.format !== 'poules' ? ' selected' : '') + '>Une seule poule</option>'
       + '<option value="poules"' + (r.format === 'poules' ? ' selected' : '') + '>Plusieurs poules</option></select></div>'
+      + '<div class="champ"><label for="r-equipes">Nombre d’équipes</label>' + nombre('r-equipes', b.equipes.length, 2, 64) + '</div>'
       + '<div class="champ" id="r-poules-bloc"><label for="r-poules">Nombre de poules</label>' + nombre('r-poules', r.nbPoules, 2, 8)
       + '<span class="aide" id="r-poules-aide"></span></div>'
-      + '<div class="champ"><label for="r-finale" id="r-finale-label">Phase finale</label>'
+      + '</div></section>'
+      // Matchs de chaque équipe
+      + '<section class="r-bloc"><h2>Matchs de chaque équipe</h2>'
+      + caseHtml('r-mixte-double', r.mixteEgalDouble, 'Mixte compté comme double (pas de différence entre mixte et double)')
+      + '<div class="r-categories">'
+      + BT.CATEGORIES.map((c) => {
+        const x = r.cat[c.cle] || { k: 0, tous: false };
+        return '<div class="r-cat" id="r-cat-' + c.cle + '-bloc"><span class="r-cat-nom" id="r-cat-' + c.cle + '-label">' + c.pluriel.charAt(0).toUpperCase() + c.pluriel.slice(1) + '</span>'
+          + '<label class="r-mini"><span>Au moins</span>' + nombre('r-cat-' + c.cle, x.k || 0, 0, 63) + '</label>'
+          + '<label class="r-mini"><span>Au plus</span>' + nombre('r-cat-' + c.cle + '-max', Math.max(Number(x.max) || 0, x.k || 0), 0, 63) + '</label>'
+          + caseHtml('r-cat-' + c.cle + '-tous', x.tous, '') + '</div>';
+      }).join('')
+      + '</div>'
+      + '<p class="note r-note">Le site prévoit le minimum pour chaque équipe. Avec un nombre impair d’équipes, une équipe joue un match de plus, sans dépasser le maximum.</p>'
+      + '<p class="erreur-champ" id="r-matchs-erreur" hidden></p>'
+      + '</section>'
+      // Format des matchs
+      + '<section class="r-bloc"><h2>Format des matchs</h2><div class="r-grille">'
+      + '<div class="champ"><label for="r-sets">Sets par match</label>' + nombre('r-sets', r.sets, 1, 5)
+      + caseHtml('r-meilleur', r.auMeilleur, '')
+      + '<span class="aide" id="r-sets-aide"></span></div>'
+      + '<div class="champ"><label for="r-points">Points par set</label>' + nombre('r-points', r.points, 1, 99)
+      + caseHtml('r-ecart', r.ecart2, '2 points d’écart') + '</div>'
+      + '<div class="champ" id="r-plafond-bloc"><label for="r-plafond">Score maximum</label>' + nombre('r-plafond', r.plafond, 1, 99)
+      + '<span class="aide">Avec 2 points d’écart, le set s’arrête à ce score.</span></div>'
+      + '<div class="champ"><label for="r-duree">Durée maximum</label>' + avecUnite(nombre('r-duree', r.dureeLimite || 0, 0, 90), 'min')
+      + '<span class="aide">0 si les matchs vont jusqu’au bout.</span></div>'
+      + '</div></section>'
+      // Phase finale
+      + '<section class="r-bloc"><h2>Phase finale</h2><div class="r-grille">'
+      + '<div class="champ champ--plein-tel"><label for="r-finale" id="r-finale-label">Qualifiés</label>'
       + '<select id="r-finale">'
       + [[0, 'Pas de phase finale'], [2, 'Finale entre les 2 premiers'], [4, 'Demi-finales (4 qualifiés)'], [8, 'Quarts de finale (8 qualifiés)'], [16, 'Huitièmes de finale (16 qualifiés)']]
         .map(([v, l]) => '<option value="' + v + '"' + (Number(r.phaseFinale) === v ? ' selected' : '') + '>' + l + '</option>').join('')
       + '</select>'
       + nombre('r-qualifies', r.qualifiesParPoule, 0, 8)
       + '<span class="aide" id="r-finale-aide"></span>'
-      + caseHtml('r-petite', r.petiteFinale, 'Match pour la 3e place')
-      + '<div id="r-finale-cat-bloc" style="margin-top:6px"><label for="r-finale-cat" class="etiquette-champ">Catégorie des matchs de phase finale</label>'
+      + caseHtml('r-petite', r.petiteFinale, 'Match pour la 3e place') + '</div>'
+      + '<div class="champ champ--plein-tel" id="r-finale-cat-bloc"><label for="r-finale-cat">Catégorie des matchs</label>'
       + '<select id="r-finale-cat">' + BT.CATEGORIES.map((c) => '<option value="' + c.cle + '"' + (r.finaleCategorie === c.cle ? ' selected' : '') + '>' + c.nom + '</option>').join('') + '</select></div>'
       + '</div>'
-      + '</div>'
-      + '<h3 class="sous-titre">Matchs de chaque équipe, par catégorie</h3>'
-      + caseHtml('r-mixte-double', r.mixteEgalDouble, 'Mixte compté comme double (pas de différence entre mixte et double)')
-      + '<div class="grille-champs grille-categories">'
-      + BT.CATEGORIES.map((c) => {
-        const x = r.cat[c.cle] || { k: 0, tous: false };
-        return '<div class="champ" id="r-cat-' + c.cle + '-bloc"><label for="r-cat-' + c.cle + '" id="r-cat-' + c.cle + '-label">' + c.pluriel.charAt(0).toUpperCase() + c.pluriel.slice(1) + '</label>'
-          + nombre('r-cat-' + c.cle, x.k || 0, 0, 63)
-          + caseHtml('r-cat-' + c.cle + '-tous', x.tous, '') + '</div>';
-      }).join('')
-      + '</div>'
-      + '<p class="erreur-champ" id="r-matchs-erreur" hidden></p>'
-      + '<h2>Matchs</h2>'
-      + '<div class="grille-champs">'
-      + '<div class="champ"><label for="r-sets">Sets par match</label>' + nombre('r-sets', r.sets, 1, 5)
-      + caseHtml('r-meilleur', r.auMeilleur, '')
-      + '<span class="aide" id="r-sets-aide"></span></div>'
-      + '<div class="champ"><label for="r-points">Points pour gagner un set</label>' + nombre('r-points', r.points, 1, 99)
-      + caseHtml('r-ecart', r.ecart2, '2 points d’écart pour gagner le set')
-      + '<div class="champ" id="r-plafond-bloc"><label for="r-plafond">Score maximum d’un set</label>' + nombre('r-plafond', r.plafond, 1, 99) + '</div></div>'
-      + '<div class="champ"><label for="r-duree">Durée maximum d’un match</label>' + nombre('r-duree', r.dureeLimite || 0, 0, 90)
-      + '<span class="aide">En minutes, 0 si les matchs vont jusqu’au bout. Le temps restant s’affiche sur chaque terrain.</span></div>'
-      + '<div class="champ"><label for="r-prevue">Durée moyenne prévue d’un match</label>' + nombre('r-prevue', r.dureePrevue || 0, 0, 90)
-      + '<span class="aide" id="r-prevue-aide"></span></div>'
-      + '<div class="champ"><label for="r-repos">Repos minimum entre deux matchs d’une équipe</label>' + nombre('r-repos', r.reposMin || 0, 0, 30)
-      + '<span class="aide">En minutes, 0 pour enchaîner. Un terrain peut rester libre quelques minutes, le temps qu’une équipe récupère.</span></div>'
-      + '<div class="champ"><label for="r-terrains">Terrains disponibles</label>' + nombre('r-terrains', r.terrains, 1, 30)
-      + caseHtml('r-auto', r.appelAuto, 'Appeler automatiquement le match suivant dès qu’un terrain se libère')
-      + '</div></div>'
-      + '<div id="r-finale-format-bloc" style="margin-top:18px">'
+      + '<div id="r-finale-format-bloc" class="r-sous-bloc">'
       + caseHtml('r-format-finale', r.formatFinale, 'Format différent pour la phase finale (par exemple des matchs plus longs)')
-      + '<div class="grille-champs" id="r-finale-champs" style="margin-top:12px">'
-      + '<div class="champ"><label for="r-finale-sets">Sets par match en phase finale</label>' + nombre('r-finale-sets', r.finaleSets, 1, 5)
+      + '<div class="r-grille" id="r-finale-champs">'
+      + '<div class="champ"><label for="r-finale-sets">Sets par match</label>' + nombre('r-finale-sets', r.finaleSets, 1, 5)
       + caseHtml('r-finale-meilleur', r.finaleAuMeilleur, '') + '</div>'
-      + '<div class="champ"><label for="r-finale-points">Points par set en phase finale</label>' + nombre('r-finale-points', r.finalePoints, 1, 99)
-      + '<span class="aide">Même règle d’écart que les poules, sans durée maximum.</span></div>'
-      + '</div></div>'
-      + '<div class="resume-reglages" id="r-resume" style="margin-top:20px"></div>'
+      + '<div class="champ"><label for="r-finale-points">Points par set</label>' + nombre('r-finale-points', r.finalePoints, 1, 99)
+      + '<span class="aide">Même règle d’écart, sans durée maximum.</span></div>'
+      + '</div></div></section>'
+      // Terrains
+      + '<section class="r-bloc"><h2>Terrains</h2><div class="r-grille">'
+      + '<div class="champ"><label for="r-terrains">Nombre de terrains</label>' + nombre('r-terrains', r.terrains, 1, 30)
+      + caseHtml('r-auto', r.appelAuto, 'Appel automatique')
+      + '<span class="aide">Le match suivant est appelé dès qu’un terrain se libère.</span></div>'
+      + '<div class="champ"><label for="r-repos">Repos minimum</label>' + avecUnite(nombre('r-repos', r.reposMin || 0, 0, 30), 'min')
+      + '<span class="aide">Entre deux matchs d’une équipe, 0 pour enchaîner.</span></div>'
+      + '</div></section>'
+      // Horaires
+      + '<section class="r-bloc"><h2>Horaires</h2><div class="r-grille">'
+      + '<div class="champ"><label for="r-debut">Heure de début</label><input type="time" id="r-debut" value="' + esc(r.heureDebut || '') + '">'
+      + '<span class="aide">Facultatif.</span></div>'
+      + '<div class="champ"><label for="r-fin">Fin de la salle</label><input type="time" id="r-fin" value="' + esc(r.heureFin || '') + '">'
+      + '<span class="aide">Facultatif. Le site te prévient si ça déborde.</span></div>'
+      + '<div class="champ champ--plein-tel"><label for="r-prevue">Durée prévue d’un match</label>' + avecUnite(nombre('r-prevue', r.dureePrevue || 0, 0, 90), 'min')
+      + '<span class="aide" id="r-prevue-aide"></span></div>'
+      + '</div></section>'
+      // Résumé
+      + '<section class="r-bloc"><h2>En résumé</h2>'
+      + '<div class="resume-reglages" id="r-resume"></div>'
       + '<div class="horaires-estimation" id="r-horaires" aria-live="polite"></div>'
-      + '<h2>Scores envoyés par les joueurs</h2>'
-      + '<div class="grille-champs"><div class="champ">'
+      + '</section>'
+      + '<section class="r-bloc"><h2>Scores envoyés par les joueurs</h2><div class="r-cases">'
       + caseHtml('r-joueurs', r.scoresJoueurs, 'Les joueurs peuvent envoyer le score de leur match depuis leur téléphone. Un organisateur le valide ensuite.')
       + caseHtml('r-validation', r.validationAuto, 'Valider tout seul quand les deux équipes envoient le même score')
-      + '</div></div>'
-      + '<h2>Règles en plus</h2>'
+      + '</div></section>'
+      + '<section class="r-bloc"><h2>Règles en plus</h2>'
       + '<div class="champ"><label for="r-regles">Tes propres règles, une par ligne</label>'
       + '<textarea id="r-regles" rows="4" maxlength="1500" placeholder="Par exemple, échauffement de 2 minutes avant chaque match">' + esc(r.reglesPerso || '') + '</textarea>'
-      + '<span class="aide">Elles s’ajoutent aux règles écrites à partir des réglages, sur la page des équipes et dans l’onglet Règles.</span></div>'
-      + '<div class="titre-actions"><h2>Équipes</h2>'
+      + '<span class="aide">Elles s’ajoutent aux règles écrites à partir des réglages, sur la page des équipes et dans l’onglet Règles.</span></div></section>'
+      + '<section class="r-bloc"><div class="titre-actions"><h2>Équipes</h2>'
       + (BT.demarre(t) ? '' : '<button type="button" class="bouton petit" data-action="melanger">Mélanger l’ordre des équipes</button>') + '</div>'
       + '<p class="note">Le nom des joueurs est facultatif, il s’affiche sur les terrains et sur la page de l’équipe. Changer un nom ne touche pas aux matchs.'
       + (t.matchs.length ? ' Si une équipe part avant la fin, « Abandon » lui fait perdre ses matchs restants par forfait.' : '') + '</p>'
       + '<span class="erreur-champ" id="r-equipes-erreur" hidden></span>'
-      + '<div class="liste-equipes" id="r-liste-equipes"></div>'
-      + '<div class="actions" style="margin-top:22px"><button type="submit" class="bouton principal grand" id="r-enregistrer">Enregistrer</button>'
+      + '<div class="liste-equipes" id="r-liste-equipes"></div></section>'
+      + '<div class="actions r-enregistrer"><button type="submit" class="bouton principal grand" id="r-enregistrer">Enregistrer</button>'
       + '<span class="note" id="r-info" role="status"></span></div>'
       + '</form>'
       + '<div class="carte" style="margin-top:16px"><h2>Sauvegarde</h2>'
@@ -1001,19 +1023,23 @@
   function compterMatchsPoules(n, r) {
     const tailles = r.format === 'poules' ? BT.taillesPoules(n, r.nbPoules) : [n];
     return BT.categoriesJouees(r).reduce((total, c) => total
-      + tailles.reduce((s, taille) => s + (taille * (c.tous ? taille - 1 : c.k)) / 2, 0), 0);
+      + tailles.reduce((s, taille) => s + Math.ceil((taille * (c.tous ? taille - 1 : c.k)) / 2), 0), 0);
   }
 
   // « Chaque équipe joue 14 doubles et 4 simples » (en poules : pour la plus grande poule).
   function texteParEquipe(n, r) {
-    const taille = r.format === 'poules' ? Math.max(...BT.taillesPoules(n, r.nbPoules)) : n;
-    const morceaux = BT.categoriesJouees(r).map((c) => {
+    const tailles = r.format === 'poules' ? BT.taillesPoules(n, r.nbPoules) : [n];
+    const taille = Math.max(...tailles);
+    const cats = BT.categoriesJouees(r);
+    const morceaux = cats.map((c) => {
       const k = c.tous ? taille - 1 : c.k;
-      return k + ' ' + (k > 1 ? c.pluriel : c.nom.toLowerCase());
+      // Nombre impair d'équipes et de matchs : une équipe joue un match de plus.
+      const plus = !c.tous && tailles.some((x) => BT.unMatchDePlus(x, c.k));
+      return k + ' ' + (k > 1 ? c.pluriel : c.nom.toLowerCase()) + (plus ? ' (' + (k + 1) + ' pour une équipe' + (r.format === 'poules' ? ' par poule impaire' : '') + ')' : '');
     });
     if (!morceaux.length) return '';
     const liste = morceaux.length > 1 ? morceaux.slice(0, -1).join(', ') + ' et ' + morceaux[morceaux.length - 1] : morceaux[0];
-    return (r.format === 'poules' ? 'Dans sa poule, chaque équipe joue jusqu’à ' : 'Chaque équipe joue ') + liste + '.';
+    return (r.format === 'poules' ? 'Dans sa poule, chaque équipe joue ' + (cats.some((c) => c.tous) ? 'jusqu’à ' : '') : 'Chaque équipe joue ') + liste + '.';
   }
 
   function texteTailles(tailles) {
@@ -1030,12 +1056,21 @@
     BT.CATEGORIES.forEach((c) => {
       const x = r.cat[c.cle];
       const champ = $('#r-cat-' + c.cle);
+      const champMax = $('#r-cat-' + c.cle + '-max');
       $('#r-cat-' + c.cle + '-bloc').hidden = c.cle === 'mixte' && r.mixteEgalDouble;
       $('#r-cat-' + c.cle + '-label').textContent = c.cle === 'double' && r.mixteEgalDouble ? 'Doubles (mixtes compris)' : c.pluriel.charAt(0).toUpperCase() + c.pluriel.slice(1);
-      $('#r-cat-' + c.cle + '-tous-texte').textContent = poules ? 'Contre toutes les équipes de sa poule' : 'Contre toutes les autres équipes';
+      $('#r-cat-' + c.cle + '-tous-texte').textContent = poules ? 'Contre toute sa poule' : 'Contre toutes les autres';
       champ.disabled = x.tous;
+      champMax.disabled = x.tous;
       champ.max = Math.max(1, n - 1);
-      if (x.tous && !poules) { champ.value = n - 1; x.k = n - 1; }
+      champMax.max = Math.max(1, n - 1);
+      if (x.tous && !poules) { champ.value = n - 1; champMax.value = n - 1; x.k = n - 1; x.max = n - 1; }
+      else if (!x.tous && !b.maxManuel[c.cle]) {
+        // Le maximum suit le minimum, avec le match en plus si le nombre d'équipes est impair.
+        const besoin = BT.maximumNecessaire(poules ? BT.taillesPoules(n, r.nbPoules) : [n], Number(x.k) || 0);
+        x.max = besoin;
+        if (document.activeElement !== champMax) champMax.value = besoin;
+      }
     });
     $('#r-poules-bloc').hidden = !poules;
     if (poules && !BT.verifierPoules(n, r.nbPoules)) {
@@ -1047,7 +1082,7 @@
     // Phase finale : nombre de qualifiés et forme du tableau
     $('#r-finale').hidden = poules;
     $('#r-qualifies').hidden = !poules;
-    $('#r-finale-label').textContent = poules ? 'Qualifiés par poule pour la phase finale' : 'Phase finale';
+    $('#r-finale-label').textContent = poules ? 'Qualifiés par poule' : 'Qualifiés';
     $('#r-finale').querySelectorAll('option').forEach((o) => { o.disabled = Number(o.value) > n; });
     const Q = poules ? (r.qualifiesParPoule > 0 ? r.qualifiesParPoule * r.nbPoules : 0) : Number(r.phaseFinale) || 0;
     let aideFinale = poules ? '0 si le classement des poules suffit.' : 'Le classement final est celui du championnat.';
@@ -1102,8 +1137,8 @@
         + (Math.floor(n / 2) < r.terrains ? ' (' + pluriel(Math.floor(n / 2), 'match', 'matchs') + ' en même temps au plus)' : '') + '</span>' : '')
       + '<span>' + esc(BT.texteFormat(r)) + '</span>';
 
-    $('#r-prevue-aide').textContent = 'En minutes. À 0, le site l’estime d’après le format des matchs, soit environ '
-      + Math.round(BT.dureeSelonFormat(r) / 60000) + ' min (environ 25 secondes par point joué). Après les premiers matchs, il se base sur leur durée réelle.';
+    $('#r-prevue-aide').textContent = 'À 0, le site compte environ ' + Math.round(BT.dureeSelonFormat(r) / 60000)
+      + ' min d’après le format (25 secondes par point joué), puis la durée réelle des matchs.';
     clearTimeout(minuteurHoraires);
     minuteurHoraires = setTimeout(estimerHoraires, 200);
 
@@ -1182,10 +1217,12 @@
       case 'r-finale-meilleur': r.finaleAuMeilleur = cible.checked; break;
       case 'r-finale-points': { const p = BT.entier(v, 1, 99, null); if (p) r.finalePoints = p; break; }
       default: {
-        const cat = /^r-cat-(simple|double|mixte)(-tous)?$/.exec(cible.id);
+        const cat = /^r-cat-(simple|double|mixte)(-tous|-max)?$/.exec(cible.id);
         if (!cat) return;
-        if (cat[2]) r.cat[cat[1]].tous = cible.checked;
-        else { const k = BT.entier(v, 0, 63, null); if (k !== null) r.cat[cat[1]].k = k; }
+        const x = r.cat[cat[1]];
+        if (cat[2] === '-tous') x.tous = cible.checked;
+        else if (cat[2] === '-max') { const m = BT.entier(v, 0, 63, null); if (m !== null) { x.max = m; b.maxManuel[cat[1]] = true; } }
+        else { const k = BT.entier(v, 0, 63, null); if (k !== null) x.k = k; }
         break;
       }
       case 'r-sets': { const s = BT.entier(v, 1, 5, null); if (s) r.sets = s; break; }

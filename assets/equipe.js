@@ -290,6 +290,16 @@
       h += '<div class="annonce-equipe' + (t.pause ? ' annonce-equipe--pause' : '') + '">'
         + esc(annonce || 'Pause, les matchs reprennent bientôt') + '</div>';
     }
+    // Forfait : l'équipe doit aller voir l'organisation (abandon, ou son dernier match perdu par forfait,
+    // tant qu'elle n'est pas de nouveau sur un terrain).
+    const dernierFini = mes.filter((m) => m.statut === 'termine').sort((x, y) => (y.fin || 0) - (x.fin || 0))[0];
+    if (e.abandon) {
+      h += '<div class="annonce-equipe annonce-equipe--forfait">Ton équipe est forfait pour la suite du tournoi. Va voir l’organisation.</div>';
+    } else if (dernierFini && dernierFini.forfait === e.id && !enCours) {
+      const num = BT.numero(t, dernierFini);
+      h += '<div class="annonce-equipe annonce-equipe--forfait">Ton équipe a été déclarée forfait pour le match ' + (num ? 'n° ' + num + ' ' : '')
+        + 'contre ' + nom(adversaire(dernierFini)) + '. Va voir l’organisation.</div>';
+    }
     h += '<section class="entete-equipe"><h1>' + esc(e.nom) + '</h1>'
       + (e.joueurs ? '<p class="joueurs">' + esc(e.joueurs) + '</p>' : '')
       + (e.abandon ? '<p class="joueurs">L’équipe a abandonné, ses matchs restants sont perdus par forfait.</p>' : '')

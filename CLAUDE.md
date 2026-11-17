@@ -40,8 +40,12 @@ commandes, commits et textes du site.
 - Classement : victoires, puis confrontation directe si exactement deux équipes sont à égalité,
   puis différence de sets, puis différence de points. `classement(t, poule)` ne compte jamais les
   matchs de phase finale.
-- Catégories : `reglages.cat = { simple, double, mixte }` avec `{ k, tous }` = nombre de matchs que
-  joue chaque équipe dans la catégorie (tous : contre toutes les autres, ou toute sa poule).
+- Catégories : `reglages.cat = { simple, double, mixte }` avec `{ k, max, tous }` : au moins `k` matchs
+  par équipe dans la catégorie, au plus `max` (0 ou absent = `k`), ou contre toutes les autres (ou toute
+  sa poule). Le site prévoit `k` pour chaque équipe ; avec un nombre impair d'équipes et `k` impair,
+  une seule équipe joue `k + 1` (`unMatchDePlus`, `paires(n, k, plus)`, pas la même équipe d'une
+  catégorie à l'autre), ce qui demande `max >= k + 1` (`verifierMaximum`). Dans les réglages, le
+  maximum suit le minimum tant qu'il n'est pas choisi à la main (`maxManuel` dans le brouillon).
   `mixteEgalDouble` (case « mixte compté comme double ») ignore la catégorie mixte.
   `categoriesJouees(r)`, champ `categorie` sur chaque match, `categorieMatch(t, m)` pour l'afficher.
   Les catégories utilisent les mêmes séries d'adversaires et sont alternées au prorata par
@@ -93,14 +97,17 @@ commandes, commits et textes du site.
   sur chaque tournoi qu'il crée (`appliquerMotDePasseRetenu` : création, Recommencer, restauration).
 - Sauvegarde : fichier JSON `{ format: 'badminton-tournoi-loisir', version, date, tournoi }`
   (Réglages), restauré depuis l'accueil comme un nouveau tournoi (nouvel identifiant).
-- Page des équipes : pendant la frappe d'un score, les mises à jour en direct attendent que le champ
+- Page des équipes : bandeau rouge « va voir l'organisation » quand l'équipe a abandonné ou que son
+  dernier match est perdu par forfait (tant qu'elle n'est pas sur un terrain). Pendant la frappe d'un score, les mises à jour en direct attendent que le champ
   soit quitté (`rendreEnDirect`). Avec l'alerte d'appel, l'écran reste allumé (Wake Lock). Sans réseau
   au chargement, la page et l'écran réessaient toutes les 15 s.
 - Connexions : `Donnees.economiserConnexion()` (page des équipes et écran) coupe la connexion Firebase
   après une minute de page cachée (`goOffline`) et la rétablit au retour (`goOnline`), pour rester sous
   la limite de 100 appareils connectés. Pas sur la page de gestion.
 - Page de gestion : une saisie des réglages pas encore enregistrée est gardée en changeant d'onglet
-  (`brouillonModifie`). Lien organisateur : la preuve est toujours écrite (la base vérifie la clé) et
+  (`brouillonModifie`). Réglages en blocs (`.r-bloc`, grille `.r-grille` de 4 colonnes égales, 2 sur
+  téléphone, `champ--plein-tel` pour les listes), unité dans le champ (`.avec-unite`), bouton
+  Enregistrer collé en bas de l'écran. Lien organisateur : la preuve est toujours écrite (la base vérifie la clé) et
   l'entrée d'avant est remise en cas d'échec.
 - Écran : 2 rangées de terrains jusqu'à 10, présentation compacte au-delà de 12 ; classement en 2 ou
   3 colonnes avec taille de texte selon le nombre de lignes ; tableau de phase finale réduit pour tenir.
