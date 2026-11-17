@@ -27,6 +27,10 @@ commandes, commits et textes du site.
   `preuves/<id>/<uid>` ; la clé circule dans le lien organisateur `tournoi.html?t=<id>#cle=<clé>`.
   Connexion anonyme Firebase pour tous les appareils qui écrivent.
 - Règles de sécurité : `database.rules.json` (à recopier dans la console Firebase à chaque changement).
+- Base en ligne active depuis le 17/11/2026 : projet Firebase `badminton-tournoi-b3ae1` (compte Google
+  de Julien, offre gratuite Spark, limite de 100 appareils connectés en même temps), Realtime Database
+  en Belgique (`europe-west1`), connexion anonyme activée avec nettoyage automatique à 30 jours.
+  Seul Julien a accès à la console Firebase : les changements de règles passent par lui.
 
 ## Tests
 

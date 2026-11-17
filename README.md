@@ -17,7 +17,7 @@ Adresse du site : https://julienduq59.github.io/badminton-tournoi-loisir/
 
 ## Base en ligne (Firebase)
 
-Sans base en ligne, le tournoi reste dans le navigateur de l'organisateur et les téléphones des joueurs ne le voient pas. Pour l'activer :
+La base en ligne est active (projet Firebase `badminton-tournoi-b3ae1`, offre gratuite). Sans elle (`assets/config.js` à null), le tournoi reste dans le navigateur de l'organisateur et les téléphones des joueurs ne le voient pas. Pour la recréer dans un autre projet :
 
 1. Créer un projet sur https://console.firebase.google.com (Google Analytics n'est pas utile).
 2. Créer une Realtime Database (emplacement Belgique, `europe-west1`, en mode verrouillé), puis coller le contenu de `database.rules.json` dans l'onglet Règles et publier.
