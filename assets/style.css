@@ -1196,7 +1196,7 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .terrain--ferme .court--libre { background: repeating-linear-gradient(135deg, #eef0ef 0 10px, #e3e7e5 10px 20px); }
 .terrain-ferme-info { margin: 0 14px 8px; padding: 4px 10px; border-radius: 999px; background: var(--rouge-clair); color: var(--rouge); font-size: .82rem; font-weight: 700; justify-self: start; width: fit-content; }
 .e-terrain--ferme { opacity: .55; }
-.acces-mdp { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--bord); display: grid; gap: 8px; }
+.acces-mdp { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--bord); display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .acces-mdp label { font-weight: 650; }
 #form-mdp { margin-top: 4px; }
 .acces-orga { margin-top: 18px; text-align: center; }
