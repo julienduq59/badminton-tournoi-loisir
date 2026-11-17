@@ -27,11 +27,27 @@
 
   function blocAlerte() {
     if (alerteVoulue() && BT.sonActif()) {
-      return '<div class="alerte-appel alerte-appel--on"><p>Alerte activée. Garde cette page ouverte, écran allumé : ton téléphone sonne et vibre quand ton match est appelé.</p>'
+      return '<div class="alerte-appel alerte-appel--on"><p>Alerte activée. ' + ('wakeLock' in navigator
+        ? 'Garde cette page ouverte, l’écran reste allumé. Ton téléphone sonne et vibre quand ton match est appelé.'
+        : 'Garde cette page ouverte, écran allumé. Ton téléphone sonne et vibre quand ton match est appelé.') + '</p>'
         + '<button type="button" class="bouton petit" data-action="alerte-off">Désactiver l’alerte</button></div>';
     }
     return '<div class="alerte-appel"><button type="button" class="bouton principal" data-action="alerte-on">Me prévenir quand mon match est appelé</button>'
       + (alerteVoulue() ? '<p class="note">Touche le bouton pour réactiver l’alerte après avoir rouvert la page.</p>' : '') + '</div>';
+  }
+
+  // Avec l'alerte, l'écran reste allumé tant que la page est affichée (si le navigateur le permet).
+  let verrouEcran = null;
+  async function garderEcranAllume() {
+    if (!('wakeLock' in navigator) || !alerteVoulue() || document.hidden || verrouEcran) return;
+    try {
+      verrouEcran = await navigator.wakeLock.request('screen');
+      verrouEcran.addEventListener('release', () => { verrouEcran = null; });
+    } catch (e) { verrouEcran = null; }
+  }
+  function libererEcran() {
+    if (verrouEcran) verrouEcran.release().catch(() => {});
+    verrouEcran = null;
   }
 
   function verifierAppel() {
@@ -64,6 +80,19 @@
 
   // Formulaire d'envoi du score (conservé quand la page se met à jour).
   let envoi = null; // { matchId, saisie: [[a, b], ...], confirmer, message }
+  // Pendant la frappe d'un score, les mises à jour en direct attendent que le champ soit quitté
+  // (sinon le curseur saute et « 10 » peut devenir « 01 »).
+  let renduDiffere = false;
+  const saisieEnCours = () => {
+    const a = document.activeElement;
+    return !!(a && a.closest && a.closest('#form-envoi'));
+  };
+  function rendreEnDirect() {
+    if (saisieEnCours()) { renduDiffere = true; return; }
+    rendre();
+  }
+  // Pas de réseau au chargement : message et nouvel essai.
+  let erreurConnexion = false;
 
   function lireChoix() {
     try { return localStorage.getItem(cleChoix); } catch (e) { return null; }
@@ -95,6 +124,10 @@
   }
 
   function introuvable() {
+    if (erreurConnexion) {
+      message({ titre: 'Connexion impossible', corps: 'Vérifie le réseau de ton téléphone. Nouvel essai dans un instant.' });
+      return;
+    }
     if (!charge) {
       message({ titre: 'Chargement du tournoi', corps: 'Un instant.' });
       return;
@@ -269,8 +302,23 @@
       + '<span>' + pluriel(moi ? moi.D : 0, 'défaite') + '</span>'
       + '</div></section>';
 
-    // Bandeau « dans la salle » : dernier numéro appelé et numéro du prochain match de l'équipe.
-    const actuel = BT.numeroActuel(t);
+    // L'équipe peut-elle encore jouer des matchs pas encore créés (phase finale) ?
+    const finalePrevue = BT.finaleAttendue(t);
+    let suiteFinale = '';
+    if (finalePrevue && !e.abandon) {
+      if (t.finale) {
+        const ligne = (BT.classementFinal(t) || []).find((l) => l.equipe.id === e.id);
+        if (t.finale.places.includes(e.id) && ligne && ligne.etape === 'Encore en lice') suiteFinale = 'tour';
+      } else if (BT.phasePoulesFinie(t)) {
+        if (BT.qualifies(t).some((x) => x.equipe.id === e.id)) suiteFinale = 'qualifiee';
+      } else {
+        suiteFinale = 'poules';
+      }
+    }
+
+    // Bandeau « dans la salle » : match en cours le plus récent et numéro du prochain match de l'équipe.
+    const appelesEnCours = t.matchs.filter((m) => m.statut === 'en_cours').map((m) => Number(BT.numero(t, m)) || 0);
+    const actuel = appelesEnCours.length ? Math.max(...appelesEnCours) : 0;
     const prochain = aJouer[0] || null;
     const avantProchain = prochain ? ordre.indexOf(prochain) : -1;
     const numProchain = prochain ? BT.numero(t, prochain) : null;
@@ -283,13 +331,16 @@
         if (avantProchain === 0) ecart = st === 'pret' ? 'Ton équipe joue dès le début du tournoi.' : 'Ton prochain match est le prochain appelé.';
         else ecart = 'Encore ' + pluriel(avantProchain, 'match') + ' à appeler avant le tien' + (vers ? ', vers ' + vers + ' (estimation)' : '') + '.';
       } else if (enCours) {
-        ecart = 'C’est ton dernier match.';
+        const derniereEtape = enCours.phase === 'finale' && (enCours.petite || enCours.tour === BT.nbTours(t) - 1);
+        if (enCours.phase === 'finale' && !derniereEtape) ecart = 'En cas de victoire, ton équipe joue le tour suivant.';
+        else if (suiteFinale === 'poules') ecart = BT.avecPoules(t) ? 'C’est ton dernier match de poule.' : 'C’est ton dernier match de championnat.';
+        else ecart = 'C’est ton dernier match.';
       }
       h += '<section class="salle">'
-        + '<div class="salle-bloc"><span class="salle-label">' + (actuel ? 'En cours dans la salle' : 'Pas encore commencé') + '</span>'
-        + '<span class="salle-num">' + (actuel ? 'n° ' + actuel : '–') + '</span></div>'
+        + '<div class="salle-bloc"><span class="salle-label">' + (actuel ? 'En cours dans la salle' : BT.numeroActuel(t) ? 'Dernier match appelé' : 'Pas encore commencé') + '</span>'
+        + '<span class="salle-num">' + (actuel ? 'n° ' + actuel : BT.numeroActuel(t) ? 'n° ' + BT.numeroActuel(t) : 'Bientôt') + '</span></div>'
         + '<div class="salle-bloc salle-bloc--moi"><span class="salle-label">' + (enCours ? 'Ton match' : 'Ton prochain match') + '</span>'
-        + '<span class="salle-num">' + (enCours ? 'n° ' + BT.numero(t, enCours) : numProchain ? 'n° ' + numProchain : '–') + '</span>'
+        + '<span class="salle-num">' + (enCours ? 'n° ' + BT.numero(t, enCours) : numProchain ? 'n° ' + numProchain : suiteFinale ? 'À venir' : 'Aucun') + '</span>'
         + ((enCours || prochain) && BT.categorieMatch(t, enCours || prochain) ? '<span class="salle-cat">' + esc(BT.categorieMatch(t, enCours || prochain)) + '</span>' : '') + '</div>'
         + (ecart ? '<p class="salle-ecart">' + ecart + '</p>' : '')
         + '</section>';
@@ -315,7 +366,15 @@
         + '</section>';
     }
     if (!enCours && !prochain) {
-      if (mes.length) {
+      if (mes.length && suiteFinale) {
+        h += '<section class="prochain"><div class="prochain-titre">Tes matchs</div>'
+          + '<div class="prochain-adversaire">' + (suiteFinale === 'tour' ? 'Qualifiée pour le tour suivant' : suiteFinale === 'qualifiee' ? 'Qualifiée pour la phase finale' : 'Matchs de poule joués') + '</div>'
+          + '<p style="margin:0">' + (suiteFinale === 'tour' ? 'Ton adversaire sera connu à la fin de l’autre match. Reste dans la salle.'
+            : suiteFinale === 'qualifiee' ? 'La phase finale commence bientôt. Reste dans la salle.'
+              : 'Les qualifiés pour la phase finale seront connus à la fin de tous les matchs ' + (BT.avecPoules(t) ? 'de poule' : 'du championnat') + '.') + '</p>'
+          + blocAlerte()
+          + '</section>';
+      } else if (mes.length) {
         h += '<section class="prochain"><div class="prochain-titre">Tes matchs</div>'
           + '<div class="prochain-adversaire">Tous tes matchs sont joués</div>'
           + (st === 'termine' && (rangFinal || (moi && !BT.avecPoules(t)))
@@ -367,7 +426,7 @@
     }
 
     if (t.matchs.length) {
-      h += '<div class="titre-actions"><h2>Classement' + (pouleMoi != null ? ', ' + BT.nomPoule(pouleMoi).toLowerCase() : '') + '</h2>'
+      h += '<div class="titre-actions"><h2>Classement' + (pouleMoi != null ? ' de la ' + BT.nomPoule(pouleMoi).replace(/^Poule/, 'poule') : '') + '</h2>'
         + '<button type="button" class="bouton petit" data-vue="classement">Tout le classement</button></div><div class="tableau-conteneur"><table class="tableau"><thead><tr>'
         + '<th>Rang</th><th class="equipe">Équipe</th><th><abbr title="Matchs joués">J</abbr></th><th><abbr title="Victoires">V</abbr></th>'
         + (nuls ? '<th><abbr title="Matchs nuls">N</abbr></th>' : '')
@@ -441,7 +500,7 @@
       ];
       if (s.meilleureVictoire) lignes.push(['Plus belle victoire', texteScore(s.meilleureVictoire.score) + ' contre ' + BT.nomEquipe(t, s.meilleureVictoire.adversaire)]);
       if (s.plusSerre) lignes.push(['Match le plus serré', texteScore(s.plusSerre.score) + ' contre ' + BT.nomEquipe(t, s.plusSerre.adversaire)]);
-      if (s.minutes) lignes.push(['Temps de jeu', s.minutes + ' minutes' + (s.plusLong ? ', plus long match ' + s.plusLong.duree + ' min' : '')]);
+      if (s.minutes) lignes.push(['Temps de jeu', pluriel(s.minutes, 'minute') + (s.plusLong ? ', plus long match ' + s.plusLong.duree + ' min' : '')]);
       const cats = Object.keys(s.parCategorie).filter(Boolean);
       if (cats.length > 1) lignes.push(['Par catégorie', cats.map((c) => BT.nomCategorie(c) + ' ' + s.parCategorie[c].V + ' V, ' + s.parCategorie[c].D + ' D').join(' · ')]);
       h += '<h2>Tes chiffres</h2><dl class="chiffres-liste">' + lignes.map(([a, b]) => '<dt>' + a + '</dt><dd>' + esc(b) + '</dd>').join('') + '</dl>';
@@ -665,10 +724,12 @@
         choisirAlerte(true);
         BT.activerSon();
         if (navigator.vibrate) navigator.vibrate(200);
+        garderEcranAllume();
         setTimeout(() => { BT.bip(); rendre(); }, 150);
         break;
       case 'alerte-off':
         choisirAlerte(false);
+        libererEcran();
         rendre();
         break;
       case 'recap-maj':
@@ -747,16 +808,35 @@
     return;
   }
 
-  D.suivre(id, (nouveau, info) => {
-    if (!nouveau && info && info.erreur && t) return;
-    t = nouveau;
-    charge = true;
-    verifierAppel();
-    rendre();
-  });
+  let arreterSuivi = null;
+  function suivreTournoi() {
+    if (arreterSuivi) arreterSuivi();
+    arreterSuivi = D.suivre(id, (nouveau, info) => {
+      if (!nouveau && info && info.erreur) {
+        if (t) return;
+        erreurConnexion = true;
+        introuvable();
+        setTimeout(suivreTournoi, 15000);
+        return;
+      }
+      erreurConnexion = false;
+      t = nouveau;
+      charge = true;
+      verifierAppel();
+      rendreEnDirect();
+    });
+  }
+  suivreTournoi();
   D.suivrePropositions(id, (p) => {
     propositions = p || {};
-    if (t) rendre();
+    if (t) rendreEnDirect();
   });
+  contenu.addEventListener('focusout', () => {
+    setTimeout(() => {
+      if (renduDiffere && !saisieEnCours()) { renduDiffere = false; rendre(); }
+    }, 0);
+  });
+  D.economiserConnexion();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) garderEcranAllume(); });
   introuvable();
 })();

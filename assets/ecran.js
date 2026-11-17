@@ -24,7 +24,7 @@
 
   function chrono(m) {
     const ecoule = Math.max(0, Math.floor((Date.now() - m.debut) / 60000));
-    const limite = t.reglages.dureeLimite;
+    const limite = BT.formatMatch(t, m).dureeLimite;
     if (limite > 0) {
       const reste = limite - ecoule;
       if (reste <= 0) return '<span class="e-chrono e-chrono--alerte">Temps écoulé</span>';
@@ -50,9 +50,10 @@
     enCours.forEach((m) => nums.add(m.terrain));
     const liste = Array.from(nums).sort((a, b) => a - b);
     const n = liste.length;
-    const colonnes = n <= 4 ? n : n <= 10 ? Math.ceil(n / 2) : Math.ceil(n / 3);
+    // Jusqu'à 2 terrains sur une rangée, 2 rangées jusqu'à 10, puis 3 et 4 rangées (présentation compacte).
+    const colonnes = n <= 2 ? n : n <= 10 ? Math.ceil(n / 2) : n <= 12 ? Math.ceil(n / 3) : Math.ceil(n / 4);
     return '<section class="zone-terrains"><h2>Sur les terrains</h2>'
-      + '<div class="ecran-terrains" style="--colonnes:' + colonnes + '">'
+      + '<div class="ecran-terrains' + (n > 12 ? ' ecran-terrains--compact' : '') + '" style="--colonnes:' + colonnes + '">'
       + liste.map((num) => {
         const m = enCours.find((x) => x.terrain === num);
         const appel = m && Date.now() - m.debut < DUREE_APPEL;
@@ -76,7 +77,7 @@
   function blocQr() {
     const url = BT.urlPage('equipe.html', { t: t.id });
     return '<div class="e-qr"><div class="qr">' + BT.qrSvg(url) + '</div>'
-      + '<p>Scanne pour suivre ton équipe<small>Prochain match, terrain, envoi du score et classement</small></p></div>';
+      + '<p>Scanne pour suivre ton équipe<small>Prochain match, terrain' + (t.reglages.scoresJoueurs ? ', envoi du score' : '') + ' et classement</small></p></div>';
   }
 
   function suite() {
@@ -95,7 +96,7 @@
         + '<div class="e-suivant-equipe">' + nom(m.a) + '</div><div class="e-suivant-contre">contre</div>'
         + '<div class="e-suivant-equipe">' + nom(m.b) + '</div></div>';
     } else {
-      h += '<div class="e-suivant"><div class="e-suivant-equipe">Tous les matchs sont lancés</div></div>';
+      h += '<div class="e-suivant"><div class="e-suivant-equipe">' + (BT.finaleAttendue(t) ? 'En attente des résultats pour la suite' : 'Tous les matchs sont lancés') + '</div></div>';
     }
     h += '</div><div class="e-suite-reste">';
     if (liste.length > 1) {
@@ -108,8 +109,10 @@
     return h;
   }
 
-  function listeClassement(lignes, avecJoues, simple) {
-    return '<ol class="e-classement' + (!simple && lignes.length > 8 ? ' e-classement--colonnes" style="--lignes:' + Math.ceil(lignes.length / 2) : '') + '">'
+  // Plus de 8 équipes : 2 colonnes (3 au-delà de 20 si la place le permet), texte réduit pour tout faire tenir.
+  function listeClassement(lignes, avecJoues, simple, maxColonnes) {
+    const colonnes = lignes.length > 20 && (maxColonnes || 3) >= 3 ? 3 : 2;
+    return '<ol class="e-classement' + (!simple && lignes.length > 8 ? ' e-classement--colonnes" style="--colonnes:' + colonnes + ';--lignes:' + Math.ceil(lignes.length / colonnes) : '') + '">'
       + lignes.map((l) => {
         const parcours = l.etape && t.finale;
         return '<li><span class="rang">' + l.rang + '</span><span class="e-cl-nom' + (parcours ? ' e-cl-nom--parcours' : '') + '">' + esc(l.equipe.nom)
@@ -123,7 +126,7 @@
     const lignes = BT.classementFinal(t);
     if (!lignes) return '<section class="e-vue-classement"><h2>Résultats finaux</h2>' + classementsPoules() + '</section>';
     return '<div class="e-final"><div><h2>Résultats finaux</h2>' + BT.podiumHtml(lignes) + '</div>'
-      + '<div><h2>Classement</h2>' + listeClassement(lignes, false) + '</div></div>';
+      + '<div><h2>Classement</h2>' + listeClassement(lignes, false, false, 2) + '</div></div>';
   }
 
   function classementsPoules() {
@@ -137,6 +140,20 @@
     if (t.finale) return '<section class="e-vue-classement"><h2>Phase finale</h2><div class="e-tableau">' + BT.tableauHtml(t) + '</div></section>';
     if (BT.avecPoules(t)) return '<section class="e-vue-classement">' + classementsPoules() + '</section>';
     return '<section class="e-vue-classement"><h2>Classement en direct</h2>' + listeClassement(BT.classement(t), true) + '</section>';
+  }
+
+  // Réduit le tableau de la phase finale pour qu'il tienne entier dans l'écran.
+  function ajusterTableau() {
+    const zone = racine.querySelector('.e-tableau');
+    const tableau = zone && zone.firstElementChild;
+    if (!tableau) return;
+    const k = Math.min(1, zone.clientHeight / tableau.scrollHeight, zone.clientWidth / tableau.scrollWidth);
+    if (k < 0.99) {
+      tableau.style.transformOrigin = 'top left';
+      tableau.style.transform = 'scale(' + k.toFixed(3) + ')';
+      tableau.style.width = (100 / k).toFixed(1) + '%';
+      tableau.style.height = 'auto';
+    }
   }
 
   // Retire les lignes de la liste « Ensuite » qui dépassent de l'écran.
@@ -167,7 +184,7 @@
     racine.className = 'ecran' + (vue === 'terrains' ? ' ecran--terrains' : vue === 'suite' ? ' ecran--suite' : vue === 'classement' ? ' ecran--classement' : '')
       + (t && bandeau() ? ' ecran--annonce' : '');
     if (!t) {
-      racine.innerHTML = '<div class="e-message">' + (charge ? 'Tournoi introuvable' : 'Chargement du tournoi') + '</div>';
+      racine.innerHTML = '<div class="e-message">' + (erreurConnexion ? 'Connexion impossible, nouvel essai dans un instant' : charge ? 'Tournoi introuvable' : 'Chargement du tournoi') + '</div>';
       return;
     }
     document.title = t.nom + ' · Écran d’affichage';
@@ -179,15 +196,31 @@
     else h += terrains(st) + suite();
     racine.innerHTML = h;
     ajusterListe();
+    ajusterTableau();
   }
 
-  D.suivre(id, (nouveau, info) => {
-    if (!nouveau && info && info.erreur && t) return;
-    t = nouveau;
-    charge = true;
-    if (t) sonnerSiNouvelAppel();
-    rendre();
-  });
+  // Sans réseau au chargement (Wi-Fi de la salle), on réessaie toutes les 15 secondes.
+  let erreurConnexion = false;
+  let arreterSuivi = null;
+  function suivreTournoi() {
+    if (arreterSuivi) arreterSuivi();
+    arreterSuivi = D.suivre(id, (nouveau, info) => {
+      if (!nouveau && info && info.erreur) {
+        if (t) return;
+        erreurConnexion = true;
+        rendre();
+        setTimeout(suivreTournoi, 15000);
+        return;
+      }
+      erreurConnexion = false;
+      t = nouveau;
+      charge = true;
+      if (t) sonnerSiNouvelAppel();
+      rendre();
+    });
+  }
+  suivreTournoi();
+  D.economiserConnexion();
 
   if (vueDemandee === 'alterne') {
     setInterval(() => {

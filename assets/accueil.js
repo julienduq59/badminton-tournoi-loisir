@@ -101,7 +101,8 @@
     e.target.value = '';
     if (!fichier) return;
     try {
-      const donnees = JSON.parse(await fichier.text());
+      let donnees;
+      try { donnees = JSON.parse(await fichier.text()); } catch (e) { throw new Error('format'); }
       const source = donnees && donnees.tournoi;
       if (!source || !Array.isArray(source.equipes) || !Array.isArray(source.matchs) || !source.reglages) throw new Error('format');
       const t = BT.normaliser(source);

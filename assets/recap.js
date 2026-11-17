@@ -209,10 +209,10 @@
     y = grilleTuiles(ctx, y, [
       [s.V, s.V > 1 ? 'victoires' : 'victoire'],
       [s.D, s.D > 1 ? 'défaites' : 'défaite'],
-      [s.joues, 'matchs joués'],
+      [s.joues, s.joues > 1 ? 'matchs joués' : 'match joué'],
       [s.ptsP, 'points marqués'],
       [(diff > 0 ? '+' : diff < 0 ? '−' : '') + Math.abs(diff), 'différence'],
-      [s.serie, 'victoires d’affilée'],
+      [s.serie, s.serie > 1 ? 'victoires d’affilée' : 'victoire d’affilée'],
     ]);
     y += 16;
 
@@ -222,7 +222,7 @@
     if (s.plusSerre) moments.push(['Match le plus serré', texteScore(s.plusSerre.score) + ' contre ' + BT.nomEquipe(t, s.plusSerre.adversaire)]);
     const cats = Object.keys(s.parCategorie).filter(Boolean);
     if (cats.length > 1) moments.push(['Bilan par catégorie', cats.map((c) => BT.nomCategorie(c) + ' ' + s.parCategorie[c].V + '-' + s.parCategorie[c].D).join('   ')]);
-    if (s.minutes) moments.push(['Temps de jeu', s.minutes + ' minutes sur le terrain' + (s.plusLong ? ', plus long match ' + s.plusLong.duree + ' min' : '')]);
+    if (s.minutes) moments.push(['Temps de jeu', s.minutes + (s.minutes > 1 ? ' minutes' : ' minute') + ' sur le terrain' + (s.plusLong ? ', plus long match ' + s.plusLong.duree + ' min' : '')]);
     if (s.joues) moments.push(['Moyenne', s.moyenne.toLocaleString('fr-FR') + ' points marqués par match']);
     if (!moments.length) moments.push(['Premier match', 'Les résultats s’afficheront ici au fil du tournoi']);
     y = faits(ctx, y, moments, 4);
@@ -233,7 +233,7 @@
     if (place3 >= 3) miniClassement(ctx, y + 30, extrait(lignesClassement(t, equipeId), equipeId, Math.min(place3, 5)), equipeId);
 
     // Le tournoi en une ligne
-    const resume = st.matchs + ' matchs joués, ' + st.points.toLocaleString('fr-FR') + ' points marqués' + (st.champion ? ', vainqueur ' + st.champion.nom : '');
+    const resume = st.matchs + (st.matchs > 1 ? ' matchs joués, ' : ' match joué, ') + st.points.toLocaleString('fr-FR') + (st.points > 1 ? ' points marqués' : ' point marqué') + (st.champion ? ', vainqueur ' + st.champion.nom : '');
     ecrire(ctx, resume, W / 2, H - 92, { taille: 30, poids: 650, couleur: 'rgba(255,255,255,0.7)', align: 'center', max: W - 2 * M });
     ecrire(ctx, 'Tournoi de badminton loisir', W / 2, H - 44, { taille: 26, poids: 600, couleur: 'rgba(255,255,255,0.45)', align: 'center' });
   }
@@ -251,17 +251,17 @@
       ecrire(ctx, st.champion.nom, M + 50, y + 165, { taille: 92, poids: 900, couleur: VERT_NUIT, max: W - 2 * M - 100 });
     } else {
       ecrire(ctx, 'EN COURS', M + 50, y + 70, { taille: 32, poids: 850, couleur: 'rgba(5,41,28,0.75)' });
-      ecrire(ctx, st.matchs + ' / ' + st.total + ' matchs joués', M + 50, y + 165, { taille: 80, poids: 900, couleur: VERT_NUIT, max: W - 2 * M - 100 });
+      ecrire(ctx, st.matchs + ' / ' + st.total + (st.matchs > 1 ? ' matchs joués' : ' match joué'), M + 50, y + 165, { taille: 80, poids: 900, couleur: VERT_NUIT, max: W - 2 * M - 100 });
     }
     y += 270;
     const duree = st.debut && st.fin ? Math.round((st.fin - st.debut) / 60000) : 0;
     y = grilleTuiles(ctx, y, [
-      [st.matchs, 'matchs joués'],
-      [st.points.toLocaleString('fr-FR'), 'points marqués'],
-      [st.sets, 'sets joués'],
+      [st.matchs, st.matchs > 1 ? 'matchs joués' : 'match joué'],
+      [st.points.toLocaleString('fr-FR'), st.points > 1 ? 'points marqués' : 'point marqué'],
+      [st.sets, st.sets > 1 ? 'sets joués' : 'set joué'],
       [t.equipes.length, 'équipes'],
-      [t.reglages.terrains, 'terrains'],
-      [duree ? Math.floor(duree / 60) + ' h ' + String(duree % 60).padStart(2, '0') : '–', 'de jeu'],
+      [t.reglages.terrains, t.reglages.terrains > 1 ? 'terrains' : 'terrain'],
+      [duree ? Math.floor(duree / 60) + ' h ' + String(duree % 60).padStart(2, '0') : '0 h 00', 'de jeu'],
     ]);
     y += 16;
     const moments = [];

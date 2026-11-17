@@ -370,7 +370,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
-.match-equipes { font-weight: 600; overflow-wrap: anywhere; }
+.match-equipes { font-weight: 600; overflow-wrap: break-word; min-width: 0; }
 .match-equipes .contre { color: var(--encre-douce); font-weight: 400; margin: 0 4px; }
 .match-equipes .gagnant { color: var(--vert-700); font-weight: 800; }
 .match-etat { display: flex; align-items: center; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
@@ -415,7 +415,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tableau { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .tableau th, .tableau td { padding: 10px 12px; text-align: center; border-bottom: 1px solid var(--bord); white-space: nowrap; }
 .tableau th { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--encre-douce); background: var(--vert-50); }
-.tableau td.equipe, .tableau th.equipe { text-align: left; white-space: normal; min-width: 140px; }
+.tableau td.equipe, .tableau th.equipe { text-align: left; white-space: normal; min-width: 110px; overflow-wrap: anywhere; }
+.liste-terrains span { overflow-wrap: anywhere; }
+@media (max-width: 380px) {
+  .tableau th, .tableau td { padding: 8px 6px; }
+  .tableau .rang { width: 34px; }
+  .tableau td.equipe, .tableau th.equipe { min-width: 0; }
+}
 .tableau td.equipe { font-weight: 650; }
 .tableau tr:last-child td { border-bottom: 0; }
 .tableau .rang { font-weight: 800; width: 48px; }
@@ -641,10 +647,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
   padding: 1.2vh 1vw 1.4vh;
   container-type: size;
 }
-.e-terrain-tete { display: flex; align-items: baseline; justify-content: space-between; gap: 1vw; margin-bottom: 1vh; }
-.e-terrain-num { font-size: clamp(1.1rem, 9cqh, 3.4rem); font-weight: 800; line-height: 1; }
+.e-terrain-tete { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 1vw; margin-bottom: 1vh; }
+.e-terrain-num { font-size: clamp(1.1rem, min(9cqh, 15cqw), 3.4rem); font-weight: 800; line-height: 1; }
 .e-terrain-num small { font-size: .45em; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: rgba(255, 255, 255, .65); margin-right: .4em; }
-.e-terrain-match { font-size: clamp(.8rem, 4.5cqh, 1.5rem); color: rgba(255, 255, 255, .65); font-weight: 650; white-space: nowrap; }
+.e-terrain-match { font-size: clamp(.8rem, min(4.5cqh, 8cqw), 1.5rem); color: rgba(255, 255, 255, .65); font-weight: 650; white-space: nowrap; }
 .e-court {
   flex: 1;
   min-height: 0;
@@ -871,7 +877,7 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .chrono { font-weight: 650; color: var(--vert-700); }
 .chrono--alerte { color: var(--rouge); font-weight: 800; }
 .joueurs-court { display: block; margin-top: 2px; font-size: .72em; font-weight: 600; opacity: .85; }
-.progression-texte small { display: block; font-weight: 600; font-size: .82rem; color: var(--encre-douce); text-align: right; }
+.progression-texte small { display: block; font-weight: 600; font-size: .82rem; color: var(--encre-douce); text-align: right; white-space: normal; }
 .etiquette--priorite { background: var(--vert-800); border-color: var(--vert-800); color: #fff; }
 .filtres select {
   margin-left: auto;
@@ -901,6 +907,7 @@ details > summary.bouton::-webkit-details-marker { display: none; }
   color: var(--encre-douce);
 }
 .score-forfait span { margin-right: auto; }
+.score-forfait .bouton { white-space: normal; max-width: 100%; text-align: left; height: auto; }
 
 /* ---------- Écran : appels, chronos, classement ---------- */
 
@@ -929,13 +936,18 @@ details > summary.bouton::-webkit-details-marker { display: none; }
   align-items: center;
   gap: 1vw;
   margin-top: 1vh;
-  font-size: clamp(.8rem, 4.5cqh, 1.5rem);
+  font-size: clamp(.8rem, min(4.5cqh, 7cqw), 1.5rem);
   font-weight: 700;
   white-space: nowrap;
 }
+/* Plus de 12 terrains : noms sur une ligne, sans joueurs ni catégorie. */
+.ecran-terrains--compact .e-court-cote { display: block; align-self: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; padding: 0 6%; }
+.ecran-terrains--compact .e-court-cote small, .ecran-terrains--compact .e-cat { display: none; }
+.ecran-terrains--compact .e-court::before, .ecran-terrains--compact .e-court::after { display: none; }
 .ecran--classement { grid-template-columns: minmax(0, 1fr); }
 .e-vue-classement { grid-column: 1 / -1; min-height: 0; overflow: hidden; }
-.e-classement--colonnes { grid-template-columns: 1fr 1fr; column-gap: 2vw; grid-auto-flow: column; grid-template-rows: repeat(var(--lignes, 8), auto); }
+.e-classement--colonnes { grid-template-columns: repeat(var(--colonnes, 2), minmax(0, 1fr)); column-gap: 2vw; grid-auto-flow: column; grid-template-rows: repeat(var(--lignes, 8), auto); }
+.e-classement--colonnes li { font-size: clamp(.75rem, min(1.6vw, calc(64vh / var(--lignes, 8) / 2.1)), 2.4rem); padding: .5vh .8vw; }
 .e-cl-nom { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .e-cl-nom--parcours { white-space: normal; line-height: 1.15; }
 .e-cl-nom small { display: block; font-size: .62em; font-weight: 650; color: rgba(255, 255, 255, .6); }
@@ -971,6 +983,14 @@ details > summary.bouton::-webkit-details-marker { display: none; }
   .filtres select { margin-left: 0; width: 100%; }
   .match-etat { max-width: 48vw; }
   .score-forfait span { width: 100%; }
+  .progression { flex-wrap: wrap; gap: 6px 14px; }
+  .progression-barre { flex: 1 1 100%; }
+  .progression-texte { flex: 1 1 100%; white-space: normal; }
+  .progression-texte small { text-align: left; }
+}
+@media (max-width: 480px) {
+  /* Plusieurs étiquettes : elles passent sous les noms pour leur laisser la place. */
+  .match-etat:has(> :nth-child(2)) { grid-column: 2 / -1; justify-content: flex-start; max-width: none; }
 }
 
 /* ---------- Poules et phase finale ---------- */

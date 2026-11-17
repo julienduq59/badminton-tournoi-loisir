@@ -15,6 +15,7 @@
   let filtre = 'tous';
   let filtreEquipe = '';
   let brouillon = null;
+  let brouillonModifie = false; // saisie des réglages pas encore enregistrée
   const enTraitement = new Set();
 
   /* ---------- Outils ---------- */
@@ -31,9 +32,8 @@
   }
 
   // Temps écoulé depuis le début du match, ou temps restant avec une durée maximum.
-  function texteChrono(debut) {
+  function texteChrono(debut, limite) {
     const ecoule = Math.max(0, Math.floor((Date.now() - debut) / 60000));
-    const limite = t.reglages.dureeLimite;
     if (limite > 0) {
       const reste = limite - ecoule;
       return reste > 0 ? { texte: pluriel(reste, 'minute restante', 'minutes restantes'), alerte: reste <= 2 } : { texte: 'Temps écoulé', alerte: true };
@@ -41,15 +41,16 @@
     return { texte: ecoule < 1 ? 'à l\u2019instant' : 'depuis ' + ecoule + ' min', alerte: false };
   }
 
-  function chronoHtml(debut) {
-    const c = texteChrono(debut);
-    return '<span class="chrono' + (c.alerte ? ' chrono--alerte' : '') + '" data-debut="' + debut + '">' + c.texte + '</span>';
+  // limite : durée maximum du match (la phase finale peut ne pas en avoir).
+  function chronoHtml(debut, limite) {
+    const c = texteChrono(debut, limite);
+    return '<span class="chrono' + (c.alerte ? ' chrono--alerte' : '') + '" data-debut="' + debut + '" data-limite="' + (limite || 0) + '">' + c.texte + '</span>';
   }
 
   function majChronos() {
     if (!t) return;
     document.querySelectorAll('.chrono[data-debut]').forEach((el) => {
-      const c = texteChrono(Number(el.dataset.debut));
+      const c = texteChrono(Number(el.dataset.debut), Number(el.dataset.limite) || 0);
       el.textContent = c.texte;
       el.classList.toggle('chrono--alerte', c.alerte);
     });
@@ -233,7 +234,8 @@
     onglet = nouveau;
     history.replaceState(null, '', location.pathname + location.search + '#' + nouveau);
     if (nouveau === 'reglages') {
-      brouillon = null;
+      // Une saisie pas encore enregistrée est gardée ; sinon on repart de la dernière version.
+      if (!brouillonModifie) brouillon = null;
       rendreReglages();
     }
     afficherOnglet();
@@ -360,7 +362,7 @@
         + '<div class="terrain-tete"><span>Terrain ' + n + '</span><span class="num-match">' + libelles(m) + 'Match ' + BT.numero(t, m) + '</span></div>'
         + '<div class="court"><div class="court-cote">' + nomComplet(m.a) + '</div><div class="court-filet"></div>'
         + '<div class="court-cote">' + nomComplet(m.b) + '</div></div>'
-        + '<div class="terrain-depuis">Commencé à ' + BT.heure(m.debut) + ', ' + chronoHtml(m.debut) + '</div>'
+        + '<div class="terrain-depuis">Commencé à ' + BT.heure(m.debut) + ', ' + chronoHtml(m.debut, BT.formatMatch(t, m).dureeLimite) + '</div>'
         + (BT.terrainFerme(t, n) ? '<div class="terrain-ferme-info">Terrain fermé après ce match</div>' : '')
         + recu
         + '<div class="terrain-pied">' + pied + '</div></article>';
@@ -430,6 +432,12 @@
     pause.className = 'bouton' + (t.pause ? ' accent' : '');
   }
 
+  // Nombre de matchs appelés au lancement (une équipe ne joue qu'un match à la fois).
+  function premiersAppels() {
+    const copie = JSON.parse(JSON.stringify(t));
+    return BT.remplirTerrains(copie, null, null, null, true).length;
+  }
+
   function rendreDirect() {
     rendreOutils();
     const el = $('#direct-contenu');
@@ -465,7 +473,7 @@
     if (st === 'pret') {
       h += '<div class="carte"><h2>Tout est prêt</h2>'
         + '<p>' + pluriel(t.matchs.length, 'match', 'matchs') + ' à jouer sur ' + pluriel(T, 'terrain') + '. '
-        + 'Au lancement, ' + (Math.min(T, attente.length) > 1 ? 'les ' + Math.min(T, attente.length) + ' premiers matchs sont appelés' : 'le premier match est appelé')
+        + 'Au lancement, ' + (premiersAppels() > 1 ? 'les ' + premiersAppels() + ' premiers matchs sont appelés' : 'le premier match est appelé')
         + ' sur les terrains.</p>'
         + '<div class="horaires-estimation">' + texteHoraires(t) + '</div>'
         + '<button type="button" class="bouton accent grand" data-action="lancer">Lancer le tournoi</button></div>';
@@ -531,6 +539,7 @@
     else etat = '<span class="etiquette">À jouer</span>';
     if (!fini && propositionsDe(m.id).length) etat += ' <span class="etiquette etiquette--recu">Score reçu</span>';
     if (m.statut === 'attente' && m.priorite) etat += ' <span class="etiquette etiquette--priorite">Prioritaire</span>';
+    else if (m.statut === 'attente' && m.reporte) etat += ' <span class="etiquette">Reporté</span>';
 
     const libres = o.libres || BT.terrainsLibres(t);
     const occupees = o.occupees || equipesOccupees();
@@ -754,7 +763,7 @@
 
   function rendrePartager() {
     const el = $('#partager');
-    if (el.querySelector('details[open]')) return;
+    const lienOuvert = !!el.querySelector('details[open]');
     const enSaisie = ['#mdp-nouveau', '#mdp-nom'].map((x) => $(x)).some((c) => c && (document.activeElement === c || c.value));
     if (enSaisie) return;
     const urlEquipes = BT.urlPage('equipe.html', { t: t.id });
@@ -793,7 +802,7 @@
         + '<div class="grille-mdp"><input type="text" id="mdp-nom" maxlength="30" autocomplete="off" placeholder="Pour qui, par exemple Grégoire" aria-label="Nom de l’organisateur">'
         + '<input type="password" id="mdp-nouveau" maxlength="64" autocomplete="new-password" autocapitalize="none" placeholder="Mot de passe, 3 caractères ou plus" aria-label="Mot de passe">'
         + '<button type="submit" class="bouton principal">Ajouter</button></div>'
-        + caseHtml('mdp-retenir', true, 'Le mettre aussi sur mes prochains tournois créés depuis cet appareil') + '</form>'
+        + caseHtml('mdp-retenir', retenirMdp, 'Le mettre aussi sur mes prochains tournois créés depuis cet appareil') + '</form>'
         + '<p class="erreur-champ" id="mdp-message" hidden></p>'
         + (retenus.length
           ? '<p class="note" style="margin:8px 0 0">Retenus sur cet appareil pour tes prochains tournois : ' + esc(retenus.map((x) => x.nom || 'sans nom').join(', ')) + '. '
@@ -815,6 +824,7 @@
       + '<a class="bouton" href="' + urlEcran('alterne') + '" target="_blank" rel="noopener">Terrains et classement en alternance</a>'
       + '</div></div>';
     el.innerHTML = h;
+    if (lienOuvert && el.querySelector('details')) el.querySelector('details').open = true;
   }
 
   /* ---------- Onglet Réglages ---------- */
@@ -1025,7 +1035,7 @@
       $('#r-cat-' + c.cle + '-tous-texte').textContent = poules ? 'Contre toutes les équipes de sa poule' : 'Contre toutes les autres équipes';
       champ.disabled = x.tous;
       champ.max = Math.max(1, n - 1);
-      if (x.tous && !poules) champ.value = n - 1;
+      if (x.tous && !poules) { champ.value = n - 1; x.k = n - 1; }
     });
     $('#r-poules-bloc').hidden = !poules;
     if (poules && !BT.verifierPoules(n, r.nbPoules)) {
@@ -1088,7 +1098,8 @@
       + (!erreur ? '<span>' + esc(texteParEquipe(n, r)) + '</span>' : '')
       + (total ? '<span><strong>' + total + '</strong> ' + (poules ? 'matchs de poule' : 'matchs') + '</span>'
         + (matchsFinale ? '<span><strong>' + matchsFinale + '</strong> matchs de phase finale</span>' : '')
-        + '<span><strong>' + Math.ceil(total / r.terrains) + '</strong> rotations sur ' + pluriel(r.terrains, 'terrain') + '</span>' : '')
+        + '<span>' + pluriel(Math.ceil(total / Math.max(1, Math.min(r.terrains, Math.floor(n / 2)))), 'rotation') + ' sur ' + pluriel(r.terrains, 'terrain')
+        + (Math.floor(n / 2) < r.terrains ? ' (' + pluriel(Math.floor(n / 2), 'match', 'matchs') + ' en même temps au plus)' : '') + '</span>' : '')
       + '<span>' + esc(BT.texteFormat(r)) + '</span>';
 
     $('#r-prevue-aide').textContent = 'En minutes. À 0, le site l’estime d’après le format des matchs, soit environ '
@@ -1104,6 +1115,7 @@
   }
 
   let minuteurHoraires = null;
+  let retenirMdp = true; // case « Le mettre aussi sur mes prochains tournois »
 
   // Horaires estimés avec les réglages en cours de saisie (matchs recréés à blanc si besoin).
   function estimerHoraires() {
@@ -1143,6 +1155,7 @@
     const b = brouillon;
     if (!b || !cible.closest || !cible.closest('#form-reglages')) return;
     const r = b.reglages;
+    brouillonModifie = true;
     $('#r-info').textContent = '';
     if (cible.dataset.index !== undefined) {
       b.equipes[Number(cible.dataset.index)][cible.dataset.champ] = cible.value;
@@ -1216,10 +1229,11 @@
     }
     const nouveauxReglages = Object.assign({}, r);
     const saisies = b.equipes.map((e, i) => ({ id: e.id, nom: (e.nom || '').trim() || 'Équipe ' + (i + 1), joueurs: (e.joueurs || '').trim() }));
-    // Garde les abandons déjà déclarés (ils ne se modifient pas depuis ce formulaire).
-    const nouvellesEquipes = (tt) => saisies.map((e) => {
+    // Sans recréation des matchs, chaque équipe garde sa poule et son abandon (seuls le nom et les
+    // joueurs changent). Avec recréation, tout repart de zéro.
+    const nouvellesEquipes = (tt, recreer) => saisies.map((e) => {
       const ancienne = tt.equipes.find((x) => x.id === e.id);
-      return ancienne && ancienne.abandon && !structureChangee(tt) ? Object.assign({}, e, { abandon: true }) : e;
+      return ancienne && !recreer ? Object.assign({}, ancienne, e) : e;
     });
     const nouveauNom = b.nom.trim() || 'Tournoi loisir';
     $('#r-enregistrer').disabled = true;
@@ -1228,7 +1242,7 @@
       tt.nom = nouveauNom;
       tt.reglages = nouveauxReglages;
       if (tt.fermes) { tt.fermes = BT.terrainsFermes(tt); if (!tt.fermes.length) delete tt.fermes; }
-      tt.equipes = nouvellesEquipes(tt);
+      tt.equipes = nouvellesEquipes(tt, recreer);
       if (recreer) BT.genererMatchs(tt);
       else {
         if (tt.finale) BT.avancerTableau(tt);
@@ -1239,6 +1253,7 @@
     $('#r-enregistrer').disabled = false;
     if (!resultat) return;
     brouillon = null;
+    brouillonModifie = false;
     if (structure) {
       changerOnglet('regles');
       window.scrollTo(0, 0);
@@ -1344,6 +1359,11 @@
       messageScore('erreur', 'Un match de phase finale doit avoir un vainqueur.');
       return;
     }
+    if (mScore && mScore.statut === 'termine' && BT.suiteCommencee(t, mScore)
+      && BT.resultat({ sets: lu.sets }).gagnant !== BT.resultat(mScore).gagnant) {
+      messageScore('erreur', 'Le match suivant du tableau a déjà commencé : le vainqueur ne peut plus changer. Reporte ce match suivant ou efface son résultat d’abord.');
+      return;
+    }
     if (!confirmer) {
       const alertes = BT.verifierScore(lu.sets, BT.formatMatch(t, mScore));
       if (alertes.length) {
@@ -1359,7 +1379,9 @@
     agir((tt) => {
       const m = trouver(tt, matchId);
       if (!m) return false;
+      const avant = BT.demarre(tt);
       BT.enregistrerScore(tt, m, lu.sets);
+      if (!avant && BT.demarre(tt) && BT.appelAutoActif(tt)) BT.remplirTerrains(tt);
       return true;
     }).then((resultat) => {
       if (resultat && propositions[matchId]) D.retirerProposition(id, matchId).catch(() => {});
@@ -1370,20 +1392,16 @@
 
   $('#score-effacer').addEventListener('click', () => {
     const m = trouver(t, matchScoreId);
+    if (m && BT.suiteCommencee(t, m)) {
+      messageScore('erreur', 'Le match suivant du tableau a déjà commencé. Reporte-le ou efface son résultat d’abord.');
+      return;
+    }
     if (!m || !confirm('Effacer le résultat du match ' + BT.numero(t, m) + ' ? Il repassera dans les matchs à jouer.')) return;
     const matchId = matchScoreId;
     dialogue.close();
     agir((tt) => {
       const x = trouver(tt, matchId);
-      if (!x) return false;
-      x.statut = 'attente';
-      x.sets = [];
-      x.fin = null;
-      x.debut = null;
-      x.terrain = null;
-      delete x.forfait;
-      if (BT.appelAutoActif(tt) && BT.demarre(tt)) BT.remplirTerrains(tt);
-      return true;
+      return !!x && BT.effacerResultat(tt, x);
     });
   });
 
@@ -1392,6 +1410,10 @@
     if (!b) return;
     const m = trouver(t, matchScoreId);
     const perdant = b.dataset.forfait;
+    if (m && m.statut === 'termine' && BT.suiteCommencee(t, m)) {
+      messageScore('erreur', 'Le match suivant du tableau a déjà commencé. Reporte-le ou efface son résultat d’abord.');
+      return;
+    }
     if (!m || !confirm(BT.nomEquipe(t, perdant) + ' déclare forfait pour le match ' + BT.numero(t, m) + ' ? L’autre équipe gagne le match.')) return;
     const matchId = matchScoreId;
     dialogue.close();
@@ -1511,15 +1533,15 @@
       }
       case 'abandon': {
         const equipeId = el.dataset.equipe;
-        if (confirm('Abandon de ' + BT.nomEquipe(t, equipeId) + ' ? Tous ses matchs restants seront perdus par forfait.')) {
-          agir((tt) => { BT.abandonEquipe(tt, equipeId); return true; }).then(() => { brouillon = null; rendreReglages(); });
+        if (confirm('Abandon de l’équipe « ' + BT.nomEquipe(t, equipeId) + ' » ? Tous ses matchs restants seront perdus par forfait.')) {
+          agir((tt) => { BT.abandonEquipe(tt, equipeId); return true; }).then(() => { if (brouillon) rendreListeEquipes(); });
         }
         break;
       }
       case 'annuler-abandon': {
         const equipeId = el.dataset.equipe;
-        if (confirm('Annuler l’abandon de ' + BT.nomEquipe(t, equipeId) + ' ? Ses matchs perdus par forfait redeviendront à jouer.')) {
-          agir((tt) => { BT.annulerAbandon(tt, equipeId); return true; }).then(() => { brouillon = null; rendreReglages(); });
+        if (confirm('Annuler l’abandon de l’équipe « ' + BT.nomEquipe(t, equipeId) + ' » ? Ses matchs perdus par forfait redeviendront à jouer.')) {
+          agir((tt) => { BT.annulerAbandon(tt, equipeId); return true; }).then(() => { if (brouillon) rendreListeEquipes(); });
         }
         break;
       }
@@ -1559,7 +1581,7 @@
         }
         break;
       case 'reporter':
-        if (m && confirm('Reporter le match ' + BT.numero(t, m) + ' (' + BT.nomEquipe(t, m.a) + ' contre ' + BT.nomEquipe(t, m.b) + ') ? Il passe à la fin de la liste des matchs à jouer.')) {
+        if (m && confirm('Reporter le match ' + BT.numero(t, m) + ' (' + BT.nomEquipe(t, m.a) + ' contre ' + BT.nomEquipe(t, m.b) + ') ? Il passe après les autres matchs à jouer, et n’est rappelé que si aucun autre match ne peut prendre le terrain.')) {
           agir((tt) => {
             const x = trouver(tt, matchId);
             if (!x || x.statut === 'termine') return false;
@@ -1604,8 +1626,16 @@
       }
       case 'appeler': {
         const terrain = Number(el.dataset.terrain);
-        // Appel à la main : le repos minimum n'est pas imposé.
-        agir((tt) => BT.remplirTerrains(tt, null, [terrain], null, true).length > 0);
+        // Même choix que l'appel automatique (repos compris). Pour forcer un match, il y a « Jouer ».
+        const essai = JSON.parse(JSON.stringify(t));
+        if (!BT.remplirTerrains(essai, null, [terrain]).length) {
+          const attente = BT.attenteRepos(t);
+          toast(attente > 0
+            ? 'Les équipes libres se reposent encore ' + Math.max(1, Math.ceil(attente / 60000)) + ' min. Pour lancer un match quand même, utilise « Jouer » dans la liste « À suivre ».'
+            : 'Aucun match ne peut être appelé pour l’instant.');
+          break;
+        }
+        agir((tt) => BT.remplirTerrains(tt, null, [terrain]).length > 0);
         break;
       }
       case 'jouer':
@@ -1615,7 +1645,9 @@
           BT.matchsEnCours(tt).forEach((y) => { occupees.add(y.a); occupees.add(y.b); });
           const libres = BT.terrainsLibres(tt);
           if (!x || x.statut !== 'attente' || !libres.length || occupees.has(x.a) || occupees.has(x.b)) return false;
+          const avant = BT.demarre(tt);
           BT.lancer(tt, x, libres[0]);
+          if (!avant && BT.appelAutoActif(tt)) BT.remplirTerrains(tt);
           return true;
         });
         break;
@@ -1648,6 +1680,7 @@
     }
   });
 
+  document.addEventListener('change', (e) => { if (e.target.id === 'mdp-retenir') retenirMdp = e.target.checked; });
   document.addEventListener('input', surSaisieReglages);
   document.addEventListener('change', surSaisieReglages);
   document.addEventListener('change', (e) => {
@@ -1661,7 +1694,8 @@
   setInterval(() => {
     if (!t || !BT.appelAutoActif(t) || !BT.demarre(t) || !BT.terrainsLibres(t).length) return;
     if (BT.attenteRepos(t) !== 0) return;
-    agir((tt) => BT.remplirTerrains(tt).length > 0);
+    // Fin d'un repos : les matchs reportés attendent, eux, la fin d'un match.
+    agir((tt) => BT.remplirTerrains(tt, null, null, new Set(tt.matchs.filter((m) => m.reporte).map((m) => m.id))).length > 0);
   }, 15000);
   document.addEventListener('submit', (e) => {
     if (e.target.id === 'form-reglages') {
@@ -1720,11 +1754,14 @@
     const cle = hash.get('cle');
     const ongletDemande = ONGLETS.includes(location.hash.slice(1)) ? location.hash.slice(1) : null;
     if (cle) {
-      history.replaceState(null, '', location.pathname + location.search);
       try {
         await D.rejoindre(id, cle);
+        history.replaceState(null, '', location.pathname + location.search);
       } catch (e) {
-        messagePlein('Lien organisateur refusé', 'Ce lien organisateur n’est pas valide pour ce tournoi.');
+        const refus = /permission/i.test((e && (e.code || e.message)) || '');
+        messagePlein(refus ? 'Lien organisateur refusé' : 'Connexion impossible',
+          refus ? 'Ce lien organisateur n’est pas valide pour ce tournoi.' : 'Vérifie la connexion internet, puis recharge la page.',
+          refus ? null : '<button type="button" class="bouton principal" onclick="location.reload()">Recharger la page</button>');
         return;
       }
     }

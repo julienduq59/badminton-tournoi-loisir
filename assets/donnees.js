@@ -67,6 +67,7 @@
 
   const local = {
     enLigne: false,
+    economiserConnexion() {},
 
     suivre(id, rappel) {
       const lire = () => rappel(BT.normaliser(lireJSON(cleTournoi(id))));
@@ -201,6 +202,20 @@
   const enLigne = {
     enLigne: true,
 
+    // Page cachée depuis une minute (téléphone en poche) : la connexion est libérée, car le forfait
+    // gratuit de Firebase compte 100 appareils connectés en même temps. Elle revient dès que la page
+    // est de nouveau affichée, et les données se remettent à jour toutes seules.
+    economiserConnexion() {
+      let minuterie = null;
+      document.addEventListener('visibilitychange', () => {
+        clearTimeout(minuterie);
+        initialiser().then(({ db }) => {
+          if (document.hidden) minuterie = setTimeout(() => { if (document.hidden) db.goOffline(); }, 60 * 1000);
+          else db.goOnline();
+        }).catch(() => {});
+      });
+    },
+
     suivre(id, rappel) {
       let actif = true;
       let ref = null;
@@ -283,14 +298,23 @@
       return true;
     },
 
-    // Ouverture du lien organisateur sur un autre appareil.
+    // Ouverture du lien organisateur (ou mot de passe) sur un appareil. La preuve est toujours écrite :
+    // les règles de la base vérifient la clé, même si l'appareil était déjà organisateur. En cas
+    // d'échec, l'entrée d'avant est remise (une clé fausse ou une coupure réseau n'efface rien).
     async rejoindre(id, cle) {
-      const liste = registre.liste().filter((x) => x.id !== id);
-      ecrireJSON(CLE_REGISTRE, [{ id, nom: 'Tournoi', maj: Date.now(), cle }].concat(liste));
+      const avant = registre.trouver(id);
+      const autres = () => registre.liste().filter((x) => x.id !== id);
+      ecrireJSON(CLE_REGISTRE, [Object.assign({ id, nom: 'Tournoi', maj: Date.now() }, avant || {}, { cle })].concat(autres()));
       try {
-        return await enLigne.assurerOrganisateur(id);
+        const utilisateur = await connecter();
+        const { db } = await initialiser();
+        const acces = {};
+        acces['preuves/' + id + '/' + utilisateur.uid] = cle;
+        acces['tournois/' + id + '/admins/' + utilisateur.uid] = true;
+        await db.ref().update(acces);
+        return true;
       } catch (erreur) {
-        registre.retirer(id);
+        ecrireJSON(CLE_REGISTRE, avant ? [avant].concat(autres()) : autres());
         throw erreur;
       }
     },

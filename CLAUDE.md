@@ -17,18 +17,25 @@ commandes, commits et textes du site.
   classement (`classement`) et remise en forme des données lues en ligne (`normaliser`).
 - `prochains()` / `planifier()` simulent l'appel automatique avec la même règle que
   `remplirTerrains()` : l'ordre affiché « à suivre » doit rester identique à l'ordre réel des appels.
-  Règle d'appel (`choisir`) : match prioritaire, puis équipes qui ne sortent pas du terrain, puis
-  équipes qui ont le moins joué, puis ordre de la file.
+  Règle d'appel (`choisir`) : match prioritaire, puis match non reporté, puis équipes qui ne sortent
+  pas du terrain (`sortiesDuTerrain` quand l'appel ne les donne pas, même règle dans `planifier`), puis
+  équipes qui ont le moins joué, puis ordre de la file. `prochains()` et les numéros prévus utilisent
+  `planifier(t, dureeMatch(t))` (repos compris). Un match reporté (`reporte`) ne revient qu'à la fin
+  d'un match : `planifier` l'écarte au départ et après un repos, la minuterie de repos l'exclut.
+  Bouton « Appeler le match suivant » : même choix que l'appel automatique, repos compris (« Jouer »
+  force un match). En appel manuel, la liste suppose qu'un terrain libre est rempli tout de suite.
 - Numéros des matchs : un match reçoit son numéro quand il est appelé (`lancer`) ou terminé sans
   appel (`numeroter`), donc les numéros suivent l'ordre réel des appels (1, 2, 3…). Un match en
   attente affiche un numéro prévu (`numero(t, m)`, calculé avec `planifier`). Retour en attente
-  (report, résultat effacé) : le numéro est retiré et redonné au prochain appel. Toujours afficher
+  (report, résultat effacé) : le numéro est retiré et redonné au prochain appel. Un forfait sur un
+  match jamais appelé (forfait, abandon) ne prend pas de numéro. Toujours afficher
   `BT.numero(t, m)`, jamais `m.numero`. La page des équipes montre le dernier numéro appelé
   (`numeroActuel`) et le numéro du prochain match de l'équipe.
 - Heures estimées : `dureeMatch()` (médiane des 12 derniers matchs, sinon `dureeReglee`),
   `planifier(t, durée)` et `finEstimee()`. Avant le lancement, pas d'heure sans heure de début à venir.
 - Forfaits : `enregistrerForfait()` (un match, champ `forfait` = équipe perdante) et
-  `abandonEquipe()` / `annulerAbandon()` (champ `abandon` sur l'équipe). Un forfait seul ne lance
+  `abandonEquipe()` / `annulerAbandon()` (champ `abandon` sur l'équipe ; les forfaits posés par
+  l'abandon portent `forfaitAbandon`, seuls ceux-là sont annulés). `genererMatchs` efface les abandons. Un forfait seul ne lance
   pas le tournoi (`demarre()`).
 - Classement : victoires, puis confrontation directe si exactement deux équipes sont à égalité,
   puis différence de sets, puis différence de points. `classement(t, poule)` ne compte jamais les
@@ -45,8 +52,11 @@ commandes, commits et textes du site.
 - Phase finale : `t.finale = { taille, places }` (places dans l'ordre du tableau, '' = case vide /
   exempt), matchs avec `phase: 'finale'`, `tour`, `slot`, `petite` (3e place). `avancerTableau()`
   crée ou corrige les matchs suivants à chaque résultat (un match pas terminé suit toujours le
-  tableau). `classementFinal()` donne les places finales, `formatMatch()` le format propre à la
-  phase finale. Un match de phase finale doit avoir un vainqueur.
+  tableau, mais un match commencé n'est jamais modifié ni supprimé). `suiteCommencee(t, m)` bloque
+  l'effacement ou le changement de vainqueur quand le match suivant du tableau a commencé.
+  `classementFinal()` donne les places finales, `formatMatch()` le format propre à la phase finale.
+  Un match de phase finale doit avoir un vainqueur : `verifierFormatFinale` refuse un nombre pair de
+  sets, ou une durée maximum sans format propre. Petite finale seulement avec 4 qualifiés ou plus.
 - Page des équipes : onglets « Mon équipe », « Classement » (en direct), « Récap » et « Partager »
   (adresse `#classement` / `#recap` / `#partager`). « Partager » montre le QR code du tournoi, ou celui de
   l'équipe (`&e=`) pour un partenaire, avec envoi du lien (Web Share) et copie ; la vue n'est pas redessinée
@@ -61,12 +71,14 @@ commandes, commits et textes du site.
   `dureeMatch()` prend la médiane réelle, sinon `dureeReglee(r)` : la durée prévue, sinon
   `dureeSelonFormat(r)` (environ 25 s par point joué, perdant à deux tiers des points du gagnant,
   1 min d'installation, plafonné à la durée maximum ; `dureeFinale` pour un format de phase finale).
-  `dureeEstimee(t, D)` simule tout le tournoi (phase finale comprise), `depassementSalle()` compare à
-  `heureFinSalle()`. Avant le lancement, `planifier` part de l'heure de début si elle est à venir.
+  `dureeEstimee(t, D)` simule tout le tournoi (phase finale comprise, durée mise à l'échelle de son
+  format), `depassementSalle()` compare à `heureFinSalle()` (première heure de fin après le premier
+  match lancé, sinon après l'heure de début). Avant le lancement, `planifier` part de l'heure de début si elle est à venir.
 - Terrains fermés : `t.fermes` (numéros), `fermerTerrain` / `ouvrirTerrain`, exclus de `terrainsLibres`,
   `planifier` et `finEstimee` comptent `nbTerrainsOuverts(t)`. Un match en cours finit sur un terrain fermé.
-- Règles du tournoi : `reglesTournoi(t)` les écrit à partir des réglages (rien d'autre que ce que le site
-  applique), plus `reglages.reglesPerso` (texte des organisateurs). Organisateur : onglet « Règles »
+- Règles du tournoi : `reglesTournoi(t)` les écrit à partir des réglages seuls (rien d'autre que ce que
+  le site applique ; nuls d'après `nulsReglages(r)`, pas d'après les résultats), plus
+  `reglages.reglesPerso` (texte des organisateurs). Organisateur : onglet « Règles »
   (`#regles`), affiché juste après la création des matchs, imprimable. Téléphone : vue `#regles`, montrée
   à l'ouverture tant que ce téléphone n'a pas lu la version actuelle (`empreinteRegles`, clé locale
   `badminton:regles:<id>`), bouton « Règles » dans la barre.
@@ -81,6 +93,17 @@ commandes, commits et textes du site.
   sur chaque tournoi qu'il crée (`appliquerMotDePasseRetenu` : création, Recommencer, restauration).
 - Sauvegarde : fichier JSON `{ format: 'badminton-tournoi-loisir', version, date, tournoi }`
   (Réglages), restauré depuis l'accueil comme un nouveau tournoi (nouvel identifiant).
+- Page des équipes : pendant la frappe d'un score, les mises à jour en direct attendent que le champ
+  soit quitté (`rendreEnDirect`). Avec l'alerte d'appel, l'écran reste allumé (Wake Lock). Sans réseau
+  au chargement, la page et l'écran réessaient toutes les 15 s.
+- Connexions : `Donnees.economiserConnexion()` (page des équipes et écran) coupe la connexion Firebase
+  après une minute de page cachée (`goOffline`) et la rétablit au retour (`goOnline`), pour rester sous
+  la limite de 100 appareils connectés. Pas sur la page de gestion.
+- Page de gestion : une saisie des réglages pas encore enregistrée est gardée en changeant d'onglet
+  (`brouillonModifie`). Lien organisateur : la preuve est toujours écrite (la base vérifie la clé) et
+  l'entrée d'avant est remise en cas d'échec.
+- Écran : 2 rangées de terrains jusqu'à 10, présentation compacte au-delà de 12 ; classement en 2 ou
+  3 colonnes avec taille de texte selon le nombre de lignes ; tableau de phase finale réduit pour tenir.
 - `t.pause` suspend l'appel automatique (`appelAutoActif`), `t.annonce` est le message affiché
   sur l'écran et les téléphones.
 - `assets/donnees.js` (`BT.Donnees`) cache le stockage : mode local (localStorage) quand
