@@ -99,10 +99,11 @@
 
   function formulaireEnvoi(m, e) {
     const adversaire = m.a === e.id ? m.b : m.a;
-    const n = t.reglages.sets;
+    const reg = BT.formatMatch(t, m);
+    const n = reg.sets;
     while (envoi.saisie.length < n) envoi.saisie.push(['', '']);
     let h = '<form class="envoi-score" id="form-envoi" novalidate>'
-      + '<p class="note" style="margin:0 0 4px">' + esc(BT.texteFormat(t.reglages)) + '</p>'
+      + '<p class="note" style="margin:0 0 4px">' + esc(BT.texteFormat(reg)) + '</p>'
       + '<div class="score-grille">'
       + '<span></span><span class="score-equipe">' + esc(e.nom) + '</span><span class="score-equipe">' + nom(adversaire) + '</span>';
     for (let i = 0; i < n; i++) {
@@ -158,8 +159,13 @@
       return;
     }
     const sets = versMoi(lu.sets, m, equipeId); // remet dans l'ordre du match (opération symétrique)
+    if (m.phase === 'finale' && !BT.resultat({ sets }).gagnant) {
+      envoi.message = { type: 'erreur', texte: 'Un match de phase finale doit avoir un vainqueur.' };
+      rendre();
+      return;
+    }
     if (!envoi.confirmer) {
-      const alertes = BT.verifierScore(sets, t.reglages);
+      const alertes = BT.verifierScore(sets, BT.formatMatch(t, m));
       if (alertes.length) {
         envoi.confirmer = true;
         envoi.message = { type: 'alerte', texte: 'Vérifie le score, il ne correspond pas aux règles du tournoi.', liste: alertes };
@@ -182,8 +188,10 @@
     const e = BT.equipe(t, equipeId);
     const adversaire = (m) => (m.a === e.id ? m.b : m.a);
     const mes = t.matchs.filter((m) => m.a === e.id || m.b === e.id);
-    const lignes = BT.classement(t);
+    const pouleMoi = BT.avecPoules(t) ? e.poule : null;
+    const lignes = BT.classement(t, pouleMoi);
     const moi = lignes.find((l) => l.equipe.id === e.id);
+    const etiquette = (m) => (m.phase === 'finale' ? '<span class="match-tour match-tour--finale">' + esc(BT.etiquetteMatch(t, m)) + '</span>' : '');
     const nuls = BT.nulsPossibles(t);
     const st = BT.statut(t);
     const plan = BT.planifier(t, BT.dureeMatch(t));
@@ -197,18 +205,47 @@
     const joues = mes.filter((m) => m.statut === 'termine').sort((x, y) => (y.fin || 0) - (x.fin || 0));
     if (envoi && (!enCours || envoi.matchId !== enCours.id)) envoi = null;
 
-    let h = '<section class="entete-equipe"><h1>' + esc(e.nom) + '</h1>'
+    // Parcours en phase finale
+    let parcours = '';
+    let rangFinal = null;
+    if (t.finale) {
+      const cf = BT.classementFinal(t) || [];
+      const ligne = cf.find((l) => l.equipe.id === e.id);
+      if (st === 'termine' && ligne) rangFinal = ligne.rang;
+      if (!t.finale.places.includes(e.id)) parcours = 'Non qualifiée pour la phase finale';
+      else if (ligne) {
+        const etape = ligne.etape || '';
+        if (etape === 'Vainqueur') parcours = 'Vainqueur du tournoi';
+        else if (etape === 'Finaliste') parcours = 'Finaliste';
+        else if (/3e place/.test(etape)) parcours = '3e place';
+        else if (/4e place/.test(etape)) parcours = '4e place';
+        else if (etape === 'Encore en lice') parcours = 'Qualifiée pour la phase finale';
+        else parcours = 'Éliminée en ' + etape.toLowerCase();
+      }
+    } else if (BT.nbQualifies(t) >= 2 && BT.phasePoulesFinie(t)) {
+      parcours = BT.qualifies(t).some((x) => x.equipe.id === e.id) ? 'Qualifiée pour la phase finale' : 'Non qualifiée pour la phase finale';
+    }
+
+    let h = '';
+    const annonce = t.annonce && t.annonce.texte ? t.annonce.texte : '';
+    if (annonce || t.pause) {
+      h += '<div class="annonce-equipe' + (t.pause ? ' annonce-equipe--pause' : '') + '">'
+        + esc(annonce || 'Pause, les matchs reprennent bientôt') + '</div>';
+    }
+    h += '<section class="entete-equipe"><h1>' + esc(e.nom) + '</h1>'
       + (e.joueurs ? '<p class="joueurs">' + esc(e.joueurs) + '</p>' : '')
       + (e.abandon ? '<p class="joueurs">L’équipe a abandonné, ses matchs restants sont perdus par forfait.</p>' : '')
+      + (parcours ? '<p class="statut-finale">' + esc(parcours) + '</p>' : '')
       + '<div class="bilan">'
-      + (moi && moi.J ? '<span>' + rangTexte(moi.rang) + ' sur ' + t.equipes.length + '</span>' : '')
+      + (pouleMoi != null ? '<span>' + BT.nomPoule(pouleMoi) + '</span>' : '')
+      + (moi && moi.J ? '<span>' + rangTexte(moi.rang) + ' sur ' + lignes.length + '</span>' : '')
       + '<span>' + pluriel(moi ? moi.V : 0, 'victoire') + '</span>'
       + (nuls && moi && moi.N ? '<span>' + pluriel(moi.N, 'nul') + '</span>' : '')
       + '<span>' + pluriel(moi ? moi.D : 0, 'défaite') + '</span>'
       + '</div></section>';
 
     if (enCours) {
-      h += '<section class="prochain prochain--en_cours"><div class="prochain-titre"><span class="point-direct"></span>Match en cours</div>'
+      h += '<section class="prochain prochain--en_cours"><div class="prochain-titre"><span class="point-direct"></span>' + (enCours.phase === 'finale' ? esc(BT.etiquetteMatch(t, enCours)) + ' en cours' : 'Match en cours') + '</div>'
         + '<div class="prochain-adversaire">contre ' + nom(adversaire(enCours)) + '</div>'
         + '<div class="prochain-terrain">Terrain ' + enCours.terrain + '</div>'
         + '<p class="note" style="margin:6px 0 0">Match ' + enCours.numero + ', commencé à ' + BT.heure(enCours.debut) + '</p>'
@@ -221,7 +258,7 @@
       if (st === 'pret') attente = avant === 0 ? 'Ce sera l’un des premiers matchs du tournoi.' : pluriel(avant, 'match') + ' passeront avant le tien.';
       else attente = avant === 0 ? 'C’est le prochain match appelé.' : pluriel(avant, 'match') + ' seront appelés avant le tien.';
       const vers = heurePrevue(m);
-      h += '<section class="prochain"><div class="prochain-titre">Ton prochain match</div>'
+      h += '<section class="prochain"><div class="prochain-titre">Ton prochain match' + (m.phase === 'finale' ? ', ' + esc(BT.etiquetteMatch(t, m).toLowerCase()) : '') + '</div>'
         + '<div class="prochain-adversaire">contre ' + nom(adversaire(m)) + '</div>'
         + (vers ? '<div class="prochain-terrain">Vers ' + vers + '<small> (estimation)</small></div>' : '')
         + '<p style="margin:4px 0 6px">Match ' + m.numero + '. ' + attente + '</p>'
@@ -231,7 +268,8 @@
     } else if (mes.length) {
       h += '<section class="prochain"><div class="prochain-titre">Tes matchs</div>'
         + '<div class="prochain-adversaire">Tous tes matchs sont joués</div>'
-        + (st === 'termine' && moi ? '<p style="margin:0">Ton équipe termine ' + rangTexte(moi.rang) + ' sur ' + t.equipes.length + '.</p>' : '')
+        + (st === 'termine' && (rangFinal || (moi && !BT.avecPoules(t)))
+          ? '<p style="margin:0">Ton équipe termine ' + rangTexte(rangFinal || moi.rang) + ' sur ' + t.equipes.length + '.</p>' : '')
         + '</section>';
     } else {
       h += '<section class="prochain"><div class="prochain-titre">Tes matchs</div>'
@@ -244,7 +282,7 @@
         + reste.map((m) => {
           const vers = heurePrevue(m);
           return '<li class="match"><span class="match-num" title="Match ' + m.numero + '">' + m.numero + '</span>'
-            + '<span class="match-equipes">contre ' + nom(adversaire(m)) + '</span>'
+            + '<span class="match-equipes">' + etiquette(m) + 'contre ' + nom(adversaire(m)) + '</span>'
             + '<span class="match-etat"><span class="etiquette">' + (vers ? 'Vers ' + vers : 'À jouer') + '</span></span></li>';
         }).join('')
         + '</ol>';
@@ -258,7 +296,7 @@
           const issue = !r.gagnant ? ['N', 'Nul'] : r.gagnant === cote ? ['V', 'Gagné'] : ['D', 'Perdu'];
           const score = m.forfait ? (m.forfait === e.id ? 'Forfait' : 'Forfait adverse') : esc(texteSets(versMoi(m.sets, m, e.id)));
           return '<li class="match match--termine"><span class="match-num" title="Match ' + m.numero + '">' + m.numero + '</span>'
-            + '<span class="match-equipes">contre ' + nom(adversaire(m)) + '</span>'
+            + '<span class="match-equipes">' + etiquette(m) + 'contre ' + nom(adversaire(m)) + '</span>'
             + '<span class="match-etat"><span class="match-score">' + score + '</span>'
             + '<span class="etiquette etiquette--' + issue[0] + '">' + issue[1] + '</span></span></li>';
         }).join('')
@@ -273,8 +311,12 @@
         + '</ol>';
     }
 
+    if (t.finale) {
+      h += '<h2>Phase finale</h2><div class="tableau-defilant">' + BT.tableauHtml(t, e.id) + '</div>';
+    }
+
     if (t.matchs.length) {
-      h += '<h2>Classement</h2><div class="tableau-conteneur"><table class="tableau"><thead><tr>'
+      h += '<h2>Classement' + (pouleMoi != null ? ', ' + BT.nomPoule(pouleMoi).toLowerCase() : '') + '</h2><div class="tableau-conteneur"><table class="tableau"><thead><tr>'
         + '<th>Rang</th><th class="equipe">Équipe</th><th><abbr title="Matchs joués">J</abbr></th><th><abbr title="Victoires">V</abbr></th>'
         + (nuls ? '<th><abbr title="Matchs nuls">N</abbr></th>' : '')
         + '<th><abbr title="Défaites">D</abbr></th><th>Sets</th></tr></thead><tbody>'

@@ -25,7 +25,17 @@ commandes, commits et textes du site.
   `abandonEquipe()` / `annulerAbandon()` (champ `abandon` sur l'équipe). Un forfait seul ne lance
   pas le tournoi (`demarre()`).
 - Classement : victoires, puis confrontation directe si exactement deux équipes sont à égalité,
-  puis différence de sets, puis différence de points.
+  puis différence de sets, puis différence de points. `classement(t, poule)` ne compte jamais les
+  matchs de phase finale.
+- Poules (`reglages.format = 'poules'`) : répartition en serpentin (`repartirPoules`), champ `poule`
+  sur les équipes et les matchs, tous contre tous dans chaque poule.
+- Phase finale : `t.finale = { taille, places }` (places dans l'ordre du tableau, '' = case vide /
+  exempt), matchs avec `phase: 'finale'`, `tour`, `slot`, `petite` (3e place). `avancerTableau()`
+  crée ou corrige les matchs suivants à chaque résultat (un match pas terminé suit toujours le
+  tableau). `classementFinal()` donne les places finales, `formatMatch()` le format propre à la
+  phase finale. Un match de phase finale doit avoir un vainqueur.
+- `t.pause` suspend l'appel automatique (`appelAutoActif`), `t.annonce` est le message affiché
+  sur l'écran et les téléphones.
 - `assets/donnees.js` (`BT.Donnees`) cache le stockage : mode local (localStorage) quand
   `assets/config.js` vaut null, mode en ligne (Firebase Realtime Database, SDK compat chargé
   depuis gstatic) quand la configuration est remplie. Toute modification du tournoi passe par

@@ -937,6 +937,8 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .e-vue-classement { grid-column: 1 / -1; min-height: 0; overflow: hidden; }
 .e-classement--colonnes { grid-template-columns: 1fr 1fr; column-gap: 2vw; grid-auto-flow: column; grid-template-rows: repeat(var(--lignes, 8), auto); }
 .e-cl-nom { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e-cl-nom--parcours { white-space: normal; line-height: 1.15; }
+.e-cl-nom small { display: block; font-size: .62em; font-weight: 650; color: rgba(255, 255, 255, .6); }
 
 /* ---------- Page des équipes : alerte et terrains ---------- */
 
@@ -968,6 +970,111 @@ details > summary.bouton::-webkit-details-marker { display: none; }
   .filtres select { margin-left: 0; width: 100%; }
   .match-etat { max-width: 48vw; }
   .score-forfait span { width: 100%; }
+}
+
+/* ---------- Poules et phase finale ---------- */
+
+.match-tour {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: var(--vert-50);
+  border: 1px solid var(--vert-100);
+  color: var(--vert-700);
+  font-size: .78rem;
+  font-weight: 700;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.match-tour--finale { background: var(--jaune-clair); border-color: #f0dc8c; color: #5c4700; }
+.tableau tr.qualifie td { background: #f3faf6; }
+.etiquette--qualifie { background: var(--vert-100); border-color: var(--vert-200); color: var(--vert-800); }
+.liste-qualifies { columns: 2; column-gap: 28px; margin: 0 0 16px; padding-left: 24px; font-weight: 650; }
+.liste-qualifies li { margin-bottom: 4px; break-inside: avoid; }
+.liste-qualifies small { color: var(--encre-douce); font-weight: 500; }
+.statut-finale { display: inline-block; margin: 0 0 12px; padding: 3px 12px; border-radius: 999px; background: var(--jaune); color: var(--vert-900); font-weight: 800; font-size: .9rem; }
+
+.tableau-defilant { overflow-x: auto; padding-bottom: 6px; }
+.tableau-finale {
+  display: grid;
+  grid-template-columns: repeat(var(--tours), minmax(190px, 1fr));
+  gap: 16px;
+  min-width: calc(var(--tours) * 200px);
+}
+.tf-tour { display: flex; flex-direction: column; }
+.tf-tour h3 { margin: 0 0 10px; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--encre-douce); }
+.tf-cases { flex: 1; display: flex; flex-direction: column; justify-content: space-around; gap: 10px; }
+.tf-match { background: var(--carte); border: 1px solid var(--bord); border-radius: var(--rayon-petit); overflow: hidden; box-shadow: var(--ombre); }
+.tf-match--en_cours { border-color: var(--jaune); box-shadow: 0 0 0 2px var(--jaune); }
+.tf-match--exempt { opacity: .85; }
+.tf-equipe { padding: 7px 10px; font-weight: 600; overflow-wrap: anywhere; }
+.tf-equipe + .tf-equipe { border-top: 1px solid var(--bord); }
+.tf-equipe.gagnant { font-weight: 800; color: var(--vert-700); }
+.tf-equipe.moi { background: var(--jaune-clair); }
+.tf-equipe em { color: var(--encre-douce); font-weight: 500; }
+.tf-info { padding: 5px 10px; font-size: .8rem; color: var(--encre-douce); background: var(--vert-50); border-top: 1px solid var(--bord); font-variant-numeric: tabular-nums; }
+.tf-petite { margin-top: 18px !important; }
+
+/* Écran de la salle : poules côte à côte et tableau sur fond sombre */
+.e-vue-classement { display: flex; flex-direction: column; }
+.e-poules { display: grid; grid-template-columns: repeat(var(--poules), minmax(0, 1fr)); gap: 2vh 2vw; align-content: start; }
+.e-poule .e-classement li { font-size: clamp(.9rem, 1.3vw, 2rem); grid-template-columns: 1.6em minmax(0, 1fr) auto; }
+.e-tableau { flex: 1; min-height: 0; }
+.e-etiquette { color: rgba(255, 255, 255, .7); font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+.page-ecran .tableau-finale { grid-template-columns: repeat(var(--tours), minmax(0, 1fr)); min-width: 0; gap: 1.6vw; height: 100%; }
+.page-ecran .tf-tour h3 { color: rgba(255, 255, 255, .65); font-size: clamp(.8rem, 1.1vw, 1.6rem); }
+.page-ecran .tf-match { background: var(--e-panneau); border-color: var(--e-ligne); box-shadow: none; }
+.page-ecran .tf-match--en_cours { border-color: var(--jaune); box-shadow: 0 0 0 .2vw var(--jaune); }
+.page-ecran .tf-equipe { color: #fff; font-size: clamp(.9rem, 1.4vw, 2.1rem); padding: .8vh .8vw; }
+.page-ecran .tf-equipe + .tf-equipe { border-color: var(--e-ligne); }
+.page-ecran .tf-equipe.gagnant { color: var(--jaune); }
+.page-ecran .tf-equipe em { color: rgba(255, 255, 255, .45); }
+.page-ecran .tf-info { background: rgba(255, 255, 255, .05); color: rgba(255, 255, 255, .7); border-color: var(--e-ligne); font-size: clamp(.75rem, 1vw, 1.4rem); padding: .5vh .8vw; }
+.page-ecran .tf-petite { color: rgba(255, 255, 255, .65); }
+
+@media (max-width: 720px) {
+  .liste-qualifies { columns: 1; }
+}
+
+/* ---------- Message, pause et fiches ---------- */
+
+.outils-direct { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; margin-bottom: 18px; }
+.annonce-form { flex: 1; min-width: 260px; }
+.annonce-form label { display: block; font-weight: 650; font-size: .9rem; margin-bottom: 6px; }
+.annonce-ligne { display: flex; gap: 8px; }
+.annonce-ligne input { flex: 1; min-width: 0; min-height: 38px; padding: 6px 12px; border: 1px solid var(--bord); border-radius: var(--rayon-petit); }
+.annonce-actuelle { margin: 6px 0 0; font-size: .85rem; color: var(--vert-700); font-weight: 600; }
+.annonce-actuelle:empty { display: none; }
+.encadre--pause { background: #fde8e6; border-color: #f6c9c4; color: #7a1d16; margin-bottom: 16px; }
+.encadre + .encadre, .encadre { margin-bottom: 16px; }
+.encadre .actions { margin-top: 10px; }
+.annonce-equipe { margin-bottom: 14px; padding: 12px 16px; border-radius: var(--rayon); background: var(--jaune); color: var(--vert-900); font-weight: 750; }
+.annonce-equipe--pause { background: #fde8e6; color: #7a1d16; }
+.ecran--annonce { grid-template-rows: auto auto minmax(0, 1fr); }
+.e-annonce {
+  grid-column: 1 / -1;
+  padding: 1.2vh 1.4vw;
+  border-radius: .8vw;
+  background: var(--jaune);
+  color: var(--vert-900);
+  font-size: clamp(1.1rem, 2vw, 3rem);
+  font-weight: 800;
+  text-align: center;
+}
+.e-annonce--pause { background: #ff8a80; }
+
+.fiches { display: none; }
+@media print {
+  body.impression-fiches > *:not(#fiches) { display: none !important; }
+  body.impression-fiches .fiches { display: block !important; }
+  .fiches-grille { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; }
+  .fiche { break-inside: avoid; border: 1px dashed #999; border-radius: 4mm; padding: 6mm; text-align: center; }
+  .fiche-tournoi { font-size: 10pt; color: #555; }
+  .fiche-nom { font-size: 20pt; font-weight: 800; margin: 2mm 0; }
+  .fiche-joueurs { font-size: 11pt; margin-bottom: 3mm; }
+  .fiche .qr { width: 45mm; margin: 0 auto 3mm; border: 0; }
+  .fiche-texte { font-size: 10pt; }
 }
 
 /* ---------- Petits écrans ---------- */

@@ -4,7 +4,9 @@
   const { esc } = BT;
   const D = BT.Donnees;
   const id = BT.idDansAdresse();
-  const vue = new URLSearchParams(location.search).get('vue');
+  const vueDemandee = new URLSearchParams(location.search).get('vue');
+  // « alterne » : terrains et classement à tour de rôle, 20 secondes chacun.
+  let vue = vueDemandee === 'alterne' ? null : vueDemandee;
   const racine = document.getElementById('ecran');
   const CLE_SON = 'badminton:son-ecran';
   const DUREE_APPEL = 90 * 1000; // un match appelé reste mis en avant 1 min 30
@@ -63,7 +65,7 @@
         return '<article class="e-terrain' + (appel ? ' e-terrain--appel' : '') + '">' + tete + '<div class="e-court">'
           + '<div class="e-court-cote">' + nomComplet(m.a) + '</div><div class="e-court-filet"></div>'
           + '<div class="e-court-cote">' + nomComplet(m.b) + '</div></div>'
-          + '<div class="e-terrain-pied">' + (appel ? '<span class="e-appel">Appel</span>' : '<span></span>') + chrono(m) + '</div></article>';
+          + '<div class="e-terrain-pied">' + (appel ? '<span class="e-appel">Appel</span>' : '<span class="e-etiquette">' + esc(BT.etiquetteMatch(t, m)) + '</span>') + chrono(m) + '</div></article>';
       }).join('')
       + '</div></section>';
   }
@@ -80,9 +82,13 @@
     const heure = (x) => (x.heure ? '<small class="e-vers">' + BT.heure(x.heure) + '</small>' : '');
     let h = '<aside class="zone-suite">';
     h += '<div><h2>Prochain match</h2>';
-    if (liste.length) {
+    if (!liste.length && !t.finale && BT.nbQualifies(t) >= 2 && BT.phasePoulesFinie(t)) {
+      h += '<div class="e-suivant"><div class="e-suivant-num">' + (BT.avecPoules(t) ? 'Poules terminées' : 'Championnat terminé') + '</div>'
+        + '<div class="e-suivant-equipe">Phase finale bientôt</div></div>';
+    } else if (liste.length) {
       const m = liste[0].m;
-      h += '<div class="e-suivant"><div class="e-suivant-num">Match ' + m.numero + '</div>'
+      const lbl = BT.etiquetteMatch(t, m);
+      h += '<div class="e-suivant"><div class="e-suivant-num">Match ' + m.numero + (lbl ? ' · ' + esc(lbl) : '') + '</div>'
         + '<div class="e-suivant-equipe">' + nom(m.a) + '</div><div class="e-suivant-contre">contre</div>'
         + '<div class="e-suivant-equipe">' + nom(m.b) + '</div></div>';
     } else {
@@ -99,20 +105,34 @@
     return h;
   }
 
-  function listeClassement(lignes, avecJoues) {
-    return '<ol class="e-classement' + (lignes.length > 8 ? ' e-classement--colonnes" style="--lignes:' + Math.ceil(lignes.length / 2) : '') + '">'
-      + lignes.map((l) => '<li><span class="rang">' + l.rang + '</span><span class="e-cl-nom">' + esc(l.equipe.nom) + '</span>'
-        + '<span class="bilan-e">' + (avecJoues ? l.J + ' J, ' : '') + l.V + ' V, ' + l.D + ' D</span></li>').join('')
+  function listeClassement(lignes, avecJoues, simple) {
+    return '<ol class="e-classement' + (!simple && lignes.length > 8 ? ' e-classement--colonnes" style="--lignes:' + Math.ceil(lignes.length / 2) : '') + '">'
+      + lignes.map((l) => {
+        const parcours = l.etape && t.finale;
+        return '<li><span class="rang">' + l.rang + '</span><span class="e-cl-nom' + (parcours ? ' e-cl-nom--parcours' : '') + '">' + esc(l.equipe.nom)
+          + (parcours ? '<small>' + esc(l.etape) + '</small>' : '') + '</span>'
+          + '<span class="bilan-e">' + (parcours ? '' : (avecJoues ? l.J + ' J, ' : '') + l.V + ' V, ' + l.D + ' D') + '</span></li>';
+      }).join('')
       + '</ol>';
   }
 
   function final() {
-    const lignes = BT.classement(t);
+    const lignes = BT.classementFinal(t);
+    if (!lignes) return '<section class="e-vue-classement"><h2>Résultats finaux</h2>' + classementsPoules() + '</section>';
     return '<div class="e-final"><div><h2>Résultats finaux</h2>' + BT.podiumHtml(lignes) + '</div>'
       + '<div><h2>Classement</h2>' + listeClassement(lignes, false) + '</div></div>';
   }
 
+  function classementsPoules() {
+    const poules = BT.listePoules(t);
+    return '<div class="e-poules" style="--poules:' + Math.min(poules.length, 4) + '">'
+      + poules.map((p) => '<div class="e-poule"><h2>' + p.nom + '</h2>' + listeClassement(BT.classement(t, p.numero), true, true) + '</div>').join('')
+      + '</div>';
+  }
+
   function classementDirect() {
+    if (t.finale) return '<section class="e-vue-classement"><h2>Phase finale</h2><div class="e-tableau">' + BT.tableauHtml(t) + '</div></section>';
+    if (BT.avecPoules(t)) return '<section class="e-vue-classement">' + classementsPoules() + '</section>';
     return '<section class="e-vue-classement"><h2>Classement en direct</h2>' + listeClassement(BT.classement(t), true) + '</section>';
   }
 
@@ -135,15 +155,21 @@
     connus = actuels;
   }
 
+  function bandeau() {
+    const texte = t.annonce && t.annonce.texte ? t.annonce.texte : (t.pause ? 'Pause, les matchs reprennent bientôt' : '');
+    return texte ? '<div class="e-annonce' + (t.pause ? ' e-annonce--pause' : '') + '">' + esc(texte) + '</div>' : '';
+  }
+
   function rendre() {
-    racine.className = 'ecran' + (vue === 'terrains' ? ' ecran--terrains' : vue === 'suite' ? ' ecran--suite' : vue === 'classement' ? ' ecran--classement' : '');
+    racine.className = 'ecran' + (vue === 'terrains' ? ' ecran--terrains' : vue === 'suite' ? ' ecran--suite' : vue === 'classement' ? ' ecran--classement' : '')
+      + (t && bandeau() ? ' ecran--annonce' : '');
     if (!t) {
       racine.innerHTML = '<div class="e-message">' + (charge ? 'Tournoi introuvable' : 'Chargement du tournoi') + '</div>';
       return;
     }
     document.title = t.nom + ' · Écran d’affichage';
     const st = BT.statut(t);
-    let h = tete();
+    let h = tete() + bandeau();
     if (st === 'preparation') h += '<div class="e-message">Les matchs ne sont pas encore prêts</div>';
     else if (st === 'termine') h += final();
     else if (vue === 'classement') h += classementDirect();
@@ -159,6 +185,13 @@
     if (t) sonnerSiNouvelAppel();
     rendre();
   });
+
+  if (vueDemandee === 'alterne') {
+    setInterval(() => {
+      vue = vue === 'classement' ? null : 'classement';
+      if (t) rendre();
+    }, 20000);
+  }
 
   // Heure, chronos et mise en avant des appels.
   setInterval(() => { if (t) rendre(); }, 15000);

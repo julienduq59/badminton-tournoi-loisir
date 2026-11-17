@@ -80,6 +80,28 @@
     el.classList.remove('imprimer');
   }
 
+  function lienNote() {
+    try { return localStorage.getItem('badminton:lien-note:' + id) === 'oui'; } catch (e) { return true; }
+  }
+
+  // Une fiche par équipe avec son propre QR code (à distribuer à l'accueil).
+  function imprimerFiches() {
+    const el = $('#fiches');
+    el.innerHTML = '<div class="fiches-grille">' + t.equipes.map((e) => {
+      const url = BT.urlPage('equipe.html', { t: t.id, e: e.id });
+      return '<div class="fiche"><div class="fiche-tournoi">' + esc(t.nom) + '</div>'
+        + '<div class="fiche-nom">' + esc(e.nom) + '</div>'
+        + (e.joueurs ? '<div class="fiche-joueurs">' + esc(e.joueurs) + '</div>' : '')
+        + '<div class="qr">' + BT.qrSvg(url) + '</div>'
+        + '<div class="fiche-texte">Scanne pour voir ton prochain match, ton terrain, envoyer ton score et suivre le classement.</div></div>';
+    }).join('') + '</div>';
+    el.hidden = false;
+    document.body.classList.add('impression-fiches');
+    window.print();
+    document.body.classList.remove('impression-fiches');
+    el.hidden = true;
+  }
+
   function equipesOccupees() {
     const s = new Set();
     BT.matchsEnCours(t).forEach((m) => { s.add(m.a); s.add(m.b); });
@@ -254,7 +276,7 @@
           + '<button type="button" class="bouton" data-action="reporter" data-id="' + m.id + '">Reporter</button>';
       }
       return '<article class="terrain' + (liste.length ? ' terrain--recu' : '') + '">'
-        + '<div class="terrain-tete"><span>Terrain ' + n + '</span><span class="num-match">Match ' + m.numero + '</span></div>'
+        + '<div class="terrain-tete"><span>Terrain ' + n + '</span><span class="num-match">' + (BT.etiquetteMatch(t, m) ? esc(BT.etiquetteMatch(t, m)) + ' · ' : '') + 'Match ' + m.numero + '</span></div>'
         + '<div class="court"><div class="court-cote">' + nomComplet(m.a) + '</div><div class="court-filet"></div>'
         + '<div class="court-cote">' + nomComplet(m.b) + '</div></div>'
         + '<div class="terrain-depuis">Commencé à ' + BT.heure(m.debut) + ', ' + chronoHtml(m.debut) + '</div>'
@@ -293,8 +315,35 @@
       + '<div class="match-actions">' + boutonsProposition(m, liste, accord, true) + '</div></li>';
   }
 
+  // Message pour la salle et pause des appels : rendus une seule fois pour ne pas effacer la saisie.
+  function rendreOutils() {
+    const el = $('#direct-outils');
+    if (!t.matchs.length) { el.innerHTML = ''; return; }
+    if (!el.firstChild) {
+      el.innerHTML = '<div class="outils-direct">'
+        + '<form class="annonce-form" id="form-annonce"><label for="annonce">Message affiché sur l’écran de la salle et les téléphones</label>'
+        + '<div class="annonce-ligne"><input type="text" id="annonce" maxlength="140" placeholder="Par exemple : pause repas jusqu’à 13 h">'
+        + '<button type="submit" class="bouton petit principal">Afficher</button>'
+        + '<button type="button" class="bouton petit" data-action="retirer-annonce" id="retirer-annonce">Retirer</button></div>'
+        + '<p class="annonce-actuelle" id="annonce-actuelle"></p></form>'
+        + '<button type="button" class="bouton" data-action="pause" id="bouton-pause"></button></div>';
+    }
+    const champ = $('#annonce');
+    const texte = t.annonce && t.annonce.texte ? t.annonce.texte : '';
+    if (document.activeElement !== champ && champ.dataset.affiche !== texte) {
+      champ.value = texte;
+      champ.dataset.affiche = texte;
+    }
+    $('#retirer-annonce').hidden = !texte;
+    $('#annonce-actuelle').textContent = texte ? 'Affiché en ce moment : « ' + texte + ' »' : '';
+    const pause = $('#bouton-pause');
+    pause.textContent = t.pause ? 'Reprendre les appels' : 'Mettre les appels en pause';
+    pause.className = 'bouton' + (t.pause ? ' accent' : '');
+  }
+
   function rendreDirect() {
-    const el = $('#direct');
+    rendreOutils();
+    const el = $('#direct-contenu');
     const st = BT.statut(t);
     if (st === 'preparation') {
       el.innerHTML = '<div class="carte"><h2>Pas encore de matchs</h2>'
@@ -311,6 +360,15 @@
     const recus = aValider();
     let h = progression();
 
+    if (t.pause) {
+      h += '<div class="encadre encadre--pause"><p><strong>Appels en pause.</strong> Les terrains qui se libèrent ne sont plus remplis automatiquement. Tu peux toujours appeler un match à la main.</p></div>';
+    }
+    if (D.enLigne && !lienNote()) {
+      h += '<div class="encadre"><p>Garde le lien organisateur de ce tournoi (onglet QR code). Il permet de le retrouver depuis un autre téléphone, ou si ce navigateur est effacé.</p>'
+        + '<div class="actions"><button type="button" class="bouton petit" data-action="voir-lien">Voir le lien organisateur</button>'
+        + '<button type="button" class="bouton petit discret" data-action="lien-note">C’est noté</button></div></div>';
+    }
+
     if (recus.length) {
       h += '<section class="a-valider"><h2>Scores envoyés par les joueurs <span class="compteur">' + recus.length + '</span></h2>'
         + '<ol class="liste-matchs">' + recus.map(ligneProposition).join('') + '</ol></section>';
@@ -322,13 +380,26 @@
         + ' sur les terrains.</p>'
         + '<button type="button" class="bouton accent grand" data-action="lancer">Lancer le tournoi</button></div>';
     }
+    if (!t.finale && BT.nbQualifies(t) >= 2 && BT.phasePoulesFinie(t)) {
+      const q = BT.qualifies(t);
+      h += '<div class="carte carte-finale"><h2>' + (BT.avecPoules(t) ? 'Phase de poules terminée' : 'Championnat terminé') + '</h2>'
+        + '<p>Voici les équipes qualifiées pour la phase finale, de la tête de série 1 à ' + q.length + '. Vérifie le classement avant de lancer.</p>'
+        + '<ol class="liste-qualifies">' + q.map((x) => '<li>' + esc(x.equipe.nom)
+          + (x.poule != null ? ' <small>' + BT.nomPoule(x.poule) + ', ' + (x.place === 1 ? '1re' : x.place + 'e') + '</small>' : '') + '</li>').join('') + '</ol>'
+        + '<div class="actions"><button type="button" class="bouton accent grand" data-action="lancer-finale">Lancer la phase finale</button>'
+        + '<button type="button" class="bouton" data-action="onglet" data-cible="classement">Voir le classement</button></div></div>';
+    }
     if (st === 'termine') {
-      const premiers = BT.classement(t).filter((l) => l.rang === 1).map((l) => esc(l.equipe.nom));
-      h += '<div class="carte"><h2>Tournoi terminé</h2><p>'
-        + (premiers.length > 1
-          ? premiers.join(' et ') + ' terminent à égalité à la première place.'
-          : premiers[0] + ' termine à la première place.')
-        + '</p><button type="button" class="bouton principal" data-action="onglet" data-cible="classement">Voir le classement</button></div>';
+      const cf = BT.classementFinal(t);
+      let texte;
+      if (cf) {
+        const premiers = cf.filter((l) => l.rang === 1).map((l) => esc(l.equipe.nom));
+        texte = premiers.length > 1 ? premiers.join(' et ') + ' terminent à égalité à la première place.' : premiers[0] + ' remporte le tournoi.';
+      } else {
+        texte = 'En tête des poules : ' + BT.listePoules(t).map((p) => esc((BT.classement(t, p.numero)[0] || { equipe: { nom: '' } }).equipe.nom) + ' (' + p.nom + ')').join(', ') + '.';
+      }
+      h += '<div class="carte"><h2>Tournoi terminé</h2><p>' + texte + '</p>'
+        + '<button type="button" class="bouton principal" data-action="onglet" data-cible="classement">Voir le classement</button></div>';
     } else {
       h += '<h2>Sur les terrains</h2><div class="grille-terrains">'
         + numerosTerrains().map((n) => carteTerrain(n, BT.matchsEnCours(t).find((m) => m.terrain === n), st, appelPossible)).join('')
@@ -388,7 +459,8 @@
     }
     return '<li class="match match--' + m.statut + (o.suivant ? ' match--suivant' : '') + '">'
       + '<span class="match-num" title="Match ' + m.numero + '">' + m.numero + '</span>'
-      + '<span class="match-equipes"><span' + clsA + '>' + nom(m.a) + '</span><span class="contre">contre</span><span' + clsB + '>' + nom(m.b) + '</span></span>'
+      + '<span class="match-equipes">' + (BT.etiquetteMatch(t, m) ? '<span class="match-tour' + (m.phase === 'finale' ? ' match-tour--finale' : '') + '">' + esc(BT.etiquetteMatch(t, m)) + '</span>' : '')
+      + '<span' + clsA + '>' + nom(m.a) + '</span><span class="contre">contre</span><span' + clsB + '>' + nom(m.b) + '</span></span>'
       + '<span class="match-etat">' + etat + '</span>'
       + '<div class="match-actions">' + actions.join('') + '</div></li>';
   }
@@ -429,27 +501,55 @@
 
   /* ---------- Onglet Classement ---------- */
 
+  function tableClassement(lignes, nuls, qualifies) {
+    return '<div class="tableau-conteneur"><table class="tableau"><thead><tr>'
+      + '<th>Rang</th><th class="equipe">Équipe</th><th><abbr title="Matchs joués">J</abbr></th><th><abbr title="Victoires">V</abbr></th>'
+      + (nuls ? '<th><abbr title="Matchs nuls">N</abbr></th>' : '')
+      + '<th><abbr title="Défaites">D</abbr></th><th>Sets</th><th>Points</th></tr></thead><tbody>'
+      + lignes.map((l, i) => '<tr' + (i < qualifies ? ' class="qualifie"' : '') + '><td class="rang">' + l.rang + '</td><td class="equipe">' + esc(l.equipe.nom)
+        + (l.equipe.abandon ? ' <span class="etiquette etiquette--N">Abandon</span>' : '')
+        + (i < qualifies ? ' <span class="etiquette etiquette--qualifie">Qualifiée</span>' : '') + '</td>'
+        + '<td>' + l.J + '</td><td class="fort">' + l.V + '</td>' + (nuls ? '<td>' + l.N + '</td>' : '') + '<td>' + l.D + '</td>'
+        + '<td>' + BT.signe(l.diffSets) + '</td><td>' + BT.signe(l.diffPts) + '</td></tr>').join('')
+      + '</tbody></table></div>';
+  }
+
   function rendreClassement() {
     const el = $('#classement');
     if (!t.matchs.length) {
       el.innerHTML = '<div class="carte"><p>Le classement s’affichera dès les premiers résultats.</p></div>';
       return;
     }
-    const lignes = BT.classement(t);
     const nuls = BT.nulsPossibles(t);
+    const st = BT.statut(t);
+    const r = t.reglages;
+    const cf = st === 'termine' ? BT.classementFinal(t) : null;
     let h = '';
-    if (BT.statut(t) === 'termine') h += '<h2>Résultats finaux</h2>' + BT.podiumHtml(lignes);
-    h += '<div class="tableau-conteneur"><table class="tableau"><thead><tr>'
-      + '<th>Rang</th><th class="equipe">Équipe</th><th><abbr title="Matchs joués">J</abbr></th><th><abbr title="Victoires">V</abbr></th>'
-      + (nuls ? '<th><abbr title="Matchs nuls">N</abbr></th>' : '')
-      + '<th><abbr title="Défaites">D</abbr></th><th>Sets</th><th>Points</th></tr></thead><tbody>'
-      + lignes.map((l) => '<tr><td class="rang">' + l.rang + '</td><td class="equipe">' + esc(l.equipe.nom) + (l.equipe.abandon ? ' <span class="etiquette etiquette--N">Abandon</span>' : '') + '</td>'
-        + '<td>' + l.J + '</td><td class="fort">' + l.V + '</td>' + (nuls ? '<td>' + l.N + '</td>' : '') + '<td>' + l.D + '</td>'
-        + '<td>' + BT.signe(l.diffSets) + '</td><td>' + BT.signe(l.diffPts) + '</td></tr>').join('')
-      + '</tbody></table></div>'
-      + '<p class="note" style="margin-top:12px">Classement au nombre de victoires'
+    if (cf) {
+      h += '<h2>Résultats finaux</h2>' + BT.podiumHtml(cf)
+        + '<div class="tableau-conteneur"><table class="tableau"><thead><tr><th>Rang</th><th class="equipe">Équipe</th>'
+        + (t.finale ? '<th class="equipe">Parcours</th>' : '<th><abbr title="Victoires">V</abbr></th><th><abbr title="Défaites">D</abbr></th>') + '</tr></thead><tbody>'
+        + cf.map((l) => '<tr><td class="rang">' + (l.rang || '') + '</td><td class="equipe">' + esc(l.equipe.nom) + '</td>'
+          + (t.finale ? '<td class="equipe">' + esc(l.etape || '') + '</td>' : '<td class="fort">' + l.V + '</td><td>' + l.D + '</td>') + '</tr>').join('')
+        + '</tbody></table></div>';
+    }
+    if (t.finale) {
+      const annulable = !t.matchs.some((m) => m.phase === 'finale' && m.statut !== 'attente' && !m.forfait);
+      h += '<h2>Phase finale</h2><div class="tableau-defilant">' + BT.tableauHtml(t) + '</div>'
+        + (annulable ? '<div class="actions pas-imprimer" style="margin-top:10px"><button type="button" class="bouton petit danger" data-action="annuler-finale">Annuler la phase finale</button></div>' : '');
+    }
+    if (BT.avecPoules(t)) {
+      const q = r.qualifiesParPoule || 0;
+      BT.listePoules(t).forEach((p) => {
+        h += '<h2>' + p.nom + '</h2>' + tableClassement(BT.classement(t, p.numero), nuls, q);
+      });
+    } else {
+      h += (cf || t.finale ? '<h2>Championnat</h2>' : '') + tableClassement(BT.classement(t), nuls, Number(r.phaseFinale) || 0);
+    }
+    h += '<p class="note" style="margin-top:12px">Classement au nombre de victoires'
       + (nuls ? ' (un match nul compte pour une demi-victoire)' : '')
-      + '. Entre deux équipes à égalité, le match qu\u2019elles ont joué l\u2019une contre l\u2019autre les départage, puis la différence de sets, puis la différence de points.</p>'
+      + '. Entre deux équipes à égalité, le match qu’elles ont joué l’une contre l’autre les départage, puis la différence de sets, puis la différence de points.'
+      + (BT.nbQualifies(t) >= 2 ? ' Les matchs de phase finale ne comptent pas dans ce classement.' : '') + '</p>'
       + '<div class="actions pas-imprimer" style="margin-top:16px">'
       + '<button type="button" class="bouton" data-action="imprimer-classement">Imprimer le classement</button>'
       + '<button type="button" class="bouton" data-action="export-classement">Télécharger le classement (Excel)</button>'
@@ -472,7 +572,8 @@
       + '<p class="lien-texte">' + esc(urlEquipes) + '</p>'
       + '<div class="actions"><button type="button" class="bouton" data-action="copier" data-texte="' + esc(urlEquipes) + '">Copier le lien</button>'
       + '<a class="bouton" href="' + esc(urlEquipes) + '" target="_blank" rel="noopener">Ouvrir la page</a>'
-      + '<button type="button" class="bouton" data-action="imprimer">Imprimer le QR code</button></div>'
+      + '<button type="button" class="bouton" data-action="imprimer">Imprimer le QR code</button>'
+      + '<button type="button" class="bouton" data-action="fiches">Imprimer une fiche par équipe</button></div>'
       + '</div></div></div>';
     if (D.enLigne) {
       const cle = D.cleOrganisateur(t.id);
@@ -496,6 +597,7 @@
       + '<a class="bouton" href="' + urlEcran('terrains') + '" target="_blank" rel="noopener">Matchs en cours seulement</a>'
       + '<a class="bouton" href="' + urlEcran('suite') + '" target="_blank" rel="noopener">Prochains matchs seulement</a>'
       + '<a class="bouton" href="' + urlEcran('classement') + '" target="_blank" rel="noopener">Classement en direct</a>'
+      + '<a class="bouton" href="' + urlEcran('alterne') + '" target="_blank" rel="noopener">Terrains et classement en alternance</a>'
       + '</div></div>';
     el.innerHTML = h;
   }
@@ -527,12 +629,28 @@
       + '<h2>Le tournoi</h2>'
       + '<div class="grille-champs"><div class="champ"><label for="r-nom">Nom du tournoi</label>'
       + '<input type="text" id="r-nom" maxlength="60" value="' + esc(b.nom) + '"></div></div>'
-      + '<h2>Format</h2>'
+      + '<h2>Déroulement</h2>'
       + '<div class="grille-champs">'
       + '<div class="champ"><label for="r-equipes">Nombre d’équipes</label>' + nombre('r-equipes', b.equipes.length, 2, 64) + '</div>'
-      + '<div class="champ"><label for="r-matchs">Matchs par équipe</label>' + nombre('r-matchs', r.matchsParEquipe, 1, 63)
-      + caseHtml('r-tous', r.tousContreTous, 'Chaque équipe rencontre toutes les autres')
-      + '<span class="erreur-champ" id="r-matchs-erreur" hidden></span></div>'
+      + '<div class="champ"><label for="r-format">Organisation</label>'
+      + '<select id="r-format"><option value="championnat"' + (r.format !== 'poules' ? ' selected' : '') + '>Une seule poule, tous ensemble</option>'
+      + '<option value="poules"' + (r.format === 'poules' ? ' selected' : '') + '>Plusieurs poules</option></select></div>'
+      + '<div class="champ" id="r-matchs-bloc"><label for="r-matchs">Matchs par équipe</label>' + nombre('r-matchs', r.matchsParEquipe, 1, 63)
+      + caseHtml('r-tous', r.tousContreTous, 'Chaque équipe rencontre toutes les autres') + '</div>'
+      + '<div class="champ" id="r-poules-bloc"><label for="r-poules">Nombre de poules</label>' + nombre('r-poules', r.nbPoules, 2, 8)
+      + '<span class="aide" id="r-poules-aide"></span></div>'
+      + '<div class="champ"><label for="r-finale" id="r-finale-label">Phase finale</label>'
+      + '<select id="r-finale">'
+      + [[0, 'Pas de phase finale'], [2, 'Finale entre les 2 premiers'], [4, 'Demi-finales (4 qualifiés)'], [8, 'Quarts de finale (8 qualifiés)'], [16, 'Huitièmes de finale (16 qualifiés)']]
+        .map(([v, l]) => '<option value="' + v + '"' + (Number(r.phaseFinale) === v ? ' selected' : '') + '>' + l + '</option>').join('')
+      + '</select>'
+      + nombre('r-qualifies', r.qualifiesParPoule, 0, 8)
+      + '<span class="aide" id="r-finale-aide"></span>'
+      + caseHtml('r-petite', r.petiteFinale, 'Match pour la 3e place') + '</div>'
+      + '</div>'
+      + '<p class="erreur-champ" id="r-matchs-erreur" hidden></p>'
+      + '<h2>Matchs</h2>'
+      + '<div class="grille-champs">'
       + '<div class="champ"><label for="r-sets">Sets par match</label>' + nombre('r-sets', r.sets, 1, 5)
       + caseHtml('r-meilleur', r.auMeilleur, '')
       + '<span class="aide" id="r-sets-aide"></span></div>'
@@ -543,6 +661,14 @@
       + '<span class="aide">En minutes, 0 si les matchs vont jusqu’au bout. Le temps restant s’affiche sur chaque terrain.</span></div>'
       + '<div class="champ"><label for="r-terrains">Terrains disponibles</label>' + nombre('r-terrains', r.terrains, 1, 30)
       + caseHtml('r-auto', r.appelAuto, 'Appeler automatiquement le match suivant dès qu’un terrain se libère')
+      + '</div></div>'
+      + '<div id="r-finale-format-bloc" style="margin-top:18px">'
+      + caseHtml('r-format-finale', r.formatFinale, 'Format différent pour la phase finale (par exemple des matchs plus longs)')
+      + '<div class="grille-champs" id="r-finale-champs" style="margin-top:12px">'
+      + '<div class="champ"><label for="r-finale-sets">Sets par match en phase finale</label>' + nombre('r-finale-sets', r.finaleSets, 1, 5)
+      + caseHtml('r-finale-meilleur', r.finaleAuMeilleur, '') + '</div>'
+      + '<div class="champ"><label for="r-finale-points">Points par set en phase finale</label>' + nombre('r-finale-points', r.finalePoints, 1, 99)
+      + '<span class="aide">Même règle d’écart que les poules, sans durée maximum.</span></div>'
       + '</div></div>'
       + '<div class="resume-reglages" id="r-resume" style="margin-top:20px"></div>'
       + '<h2>Scores envoyés par les joueurs</h2>'
@@ -611,23 +737,67 @@
 
   function structureChangee(tournoi) {
     const r = brouillon.reglages;
-    return !tournoi.matchs.length || brouillon.equipes.length !== tournoi.equipes.length
-      || r.matchsParEquipe !== tournoi.reglages.matchsParEquipe
-      || brouillon.equipes.some((e, i) => e.id !== tournoi.equipes[i].id);
+    const avant = tournoi.reglages;
+    if (!tournoi.matchs.length || brouillon.equipes.length !== tournoi.equipes.length) return true;
+    if ((r.format || 'championnat') !== (avant.format || 'championnat')) return true;
+    if (r.format === 'poules' ? r.nbPoules !== avant.nbPoules : r.matchsParEquipe !== avant.matchsParEquipe) return true;
+    return brouillon.equipes.some((e, i) => e.id !== tournoi.equipes[i].id);
+  }
+
+  // Nombre de matchs de la phase de poules (ou du championnat) avec ces réglages.
+  function compterMatchsPoules(n, r) {
+    if (r.format === 'poules') return BT.taillesPoules(n, r.nbPoules).reduce((s, k) => s + (k * (k - 1)) / 2, 0);
+    return (n * r.matchsParEquipe) / 2;
+  }
+
+  function texteTailles(tailles) {
+    const liste = tailles.map(String);
+    return liste.length > 1 ? liste.slice(0, -1).join(', ') + ' et ' + liste[liste.length - 1] : liste[0];
   }
 
   function majReglages() {
     const b = brouillon;
     const r = b.reglages;
     const n = b.equipes.length;
+    const poules = r.format === 'poules';
     if (r.tousContreTous) {
       r.matchsParEquipe = n - 1;
       $('#r-matchs').value = n - 1;
     }
     $('#r-matchs').disabled = r.tousContreTous;
     $('#r-matchs').max = Math.max(1, n - 1);
+    $('#r-matchs-bloc').hidden = poules;
+    $('#r-poules-bloc').hidden = !poules;
+    if (poules && !BT.verifierPoules(n, r.nbPoules)) {
+      $('#r-poules-aide').textContent = 'Poules de ' + texteTailles(BT.taillesPoules(n, r.nbPoules)) + ' équipes. Chaque équipe joue contre toutes celles de sa poule.';
+    } else {
+      $('#r-poules-aide').textContent = '';
+    }
 
-    const erreur = BT.verifierFormat(n, r.matchsParEquipe);
+    // Phase finale : nombre de qualifiés et forme du tableau
+    $('#r-finale').hidden = poules;
+    $('#r-qualifies').hidden = !poules;
+    $('#r-finale-label').textContent = poules ? 'Qualifiés par poule pour la phase finale' : 'Phase finale';
+    $('#r-finale').querySelectorAll('option').forEach((o) => { o.disabled = Number(o.value) > n; });
+    const Q = poules ? (r.qualifiesParPoule > 0 ? r.qualifiesParPoule * r.nbPoules : 0) : Number(r.phaseFinale) || 0;
+    let aideFinale = poules ? '0 si le classement des poules suffit.' : 'Le classement final est celui du championnat.';
+    if (Q >= 2) {
+      let S = 2;
+      while (S < Q) S *= 2;
+      const titre = ['finale', 'demi-finales', 'quarts de finale', 'huitièmes de finale', 'seizièmes de finale'][Math.round(Math.log2(S)) - 1] || 'tableau de ' + S;
+      aideFinale = Q + ' équipes qualifiées, ' + titre + '.'
+        + (S > Q ? ' Les ' + (S - Q) + ' meilleures passent directement au tour suivant.' : '');
+    }
+    if (t.finale) aideFinale = 'La phase finale est déjà lancée. Ces réglages ne la modifient plus, sauf le match pour la 3e place.';
+    $('#r-finale-aide').textContent = aideFinale;
+    $('#r-petite-case').hidden = Q < 4 && !t.finale;
+    $('#r-finale-format-bloc').hidden = Q < 2 && !t.finale;
+    $('#r-finale-champs').hidden = !r.formatFinale;
+    const finaleImpair = r.finaleSets % 2 === 1 && r.finaleSets >= 3;
+    $('#r-finale-meilleur-case').hidden = !finaleImpair;
+    $('#r-finale-meilleur-texte').textContent = 'Le match s’arrête dès qu’une équipe a gagné ' + ((r.finaleSets + 1) / 2) + ' sets (au meilleur des ' + r.finaleSets + ')';
+
+    const erreur = BT.verifierDeroulement(n, r);
     $('#r-matchs-erreur').hidden = !erreur;
     $('#r-matchs-erreur').textContent = erreur || '';
 
@@ -647,9 +817,12 @@
     $('#r-plafond-bloc').hidden = !r.ecart2;
     $('#r-validation-case').hidden = !r.scoresJoueurs;
 
-    const total = erreur ? null : (n * r.matchsParEquipe) / 2;
+    const total = erreur ? null : compterMatchsPoules(n, r);
+    const matchsFinale = Q >= 2 ? Q - 1 + (r.petiteFinale && Q >= 4 ? 1 : 0) : 0;
     $('#r-resume').innerHTML = '<span><strong>' + n + '</strong> équipes</span>'
-      + (total ? '<span><strong>' + total + '</strong> matchs au total</span>'
+      + (poules && !erreur ? '<span><strong>' + r.nbPoules + '</strong> poules</span>' : '')
+      + (total ? '<span><strong>' + total + '</strong> ' + (poules ? 'matchs de poule' : 'matchs') + '</span>'
+        + (matchsFinale ? '<span><strong>' + matchsFinale + '</strong> matchs de phase finale</span>' : '')
         + '<span><strong>' + Math.ceil(total / r.terrains) + '</strong> rotations sur ' + pluriel(r.terrains, 'terrain') + '</span>' : '')
       + '<span>' + esc(BT.texteFormat(r)) + '</span>';
 
@@ -680,6 +853,15 @@
         break;
       }
       case 'r-matchs': { const k = BT.entier(v, 1, 63, null); if (k) r.matchsParEquipe = k; break; }
+      case 'r-format': r.format = v === 'poules' ? 'poules' : 'championnat'; break;
+      case 'r-poules': { const p = BT.entier(v, 2, 8, null); if (p) r.nbPoules = p; break; }
+      case 'r-finale': r.phaseFinale = BT.entier(v, 0, 16, 0); break;
+      case 'r-qualifies': { const q = BT.entier(v, 0, 8, null); if (q !== null) r.qualifiesParPoule = q; break; }
+      case 'r-petite': r.petiteFinale = cible.checked; break;
+      case 'r-format-finale': r.formatFinale = cible.checked; break;
+      case 'r-finale-sets': { const s = BT.entier(v, 1, 5, null); if (s) r.finaleSets = s; break; }
+      case 'r-finale-meilleur': r.finaleAuMeilleur = cible.checked; break;
+      case 'r-finale-points': { const p = BT.entier(v, 1, 99, null); if (p) r.finalePoints = p; break; }
       case 'r-tous': r.tousContreTous = cible.checked; break;
       case 'r-sets': { const s = BT.entier(v, 1, 5, null); if (s) r.sets = s; break; }
       case 'r-meilleur': r.auMeilleur = cible.checked; break;
@@ -701,10 +883,10 @@
     const r = b.reglages;
     r.nbEquipes = b.equipes.length;
     if (r.tousContreTous) r.matchsParEquipe = r.nbEquipes - 1;
-    const erreur = BT.verifierFormat(r.nbEquipes, r.matchsParEquipe);
+    const erreur = BT.verifierDeroulement(r.nbEquipes, r);
     if (erreur) {
       majReglages();
-      $('#r-matchs').focus();
+      $('#r-matchs-erreur').scrollIntoView({ block: 'center' });
       return;
     }
     if (r.ecart2 && r.plafond < r.points) r.plafond = r.points;
@@ -731,7 +913,10 @@
       tt.reglages = nouveauxReglages;
       tt.equipes = nouvellesEquipes(tt);
       if (recreer) BT.genererMatchs(tt);
-      else if (tt.reglages.appelAuto && BT.demarre(tt)) BT.remplirTerrains(tt);
+      else {
+        if (tt.finale) BT.avancerTableau(tt);
+        if (BT.appelAutoActif(tt) && BT.demarre(tt)) BT.remplirTerrains(tt);
+      }
       return true;
     });
     $('#r-enregistrer').disabled = false;
@@ -773,9 +958,10 @@
     confirmer = false;
     const recus = propositionsDe(m.id);
     const depart = (m.sets && m.sets.length) ? m.sets : (recus[0] ? recus[0].sets : []);
-    const n = Math.max(t.reglages.sets, depart.length, ...recus.map((p) => p.sets.length));
+    const reg = BT.formatMatch(t, m);
+    const n = Math.max(reg.sets, depart.length, ...recus.map((p) => p.sets.length));
     $('#score-titre').textContent = 'Match ' + m.numero + (m.statut === 'en_cours' ? ', terrain ' + m.terrain : '');
-    $('#score-format').textContent = BT.texteFormat(t.reglages);
+    $('#score-format').textContent = (BT.etiquetteMatch(t, m) ? BT.etiquetteMatch(t, m) + '. ' : '') + BT.texteFormat(reg);
     $('#score-recus').innerHTML = recus.map((p, i) => '<div class="score-recu"><span>Score envoyé par ' + nom(p.equipeId) + ' : <strong>' + esc(texteSets(p.sets)) + '</strong></span>'
       + '<button type="button" class="bouton petit" data-reprendre="' + i + '">Reprendre</button></div>').join('');
     $('#score-recus').hidden = !recus.length;
@@ -835,8 +1021,13 @@
     e.preventDefault();
     const lu = lireDialogue();
     if (lu.erreur) { messageScore('erreur', lu.erreur); return; }
+    const mScore = trouver(t, matchScoreId);
+    if (mScore && mScore.phase === 'finale' && !BT.resultat({ sets: lu.sets }).gagnant) {
+      messageScore('erreur', 'Un match de phase finale doit avoir un vainqueur.');
+      return;
+    }
     if (!confirmer) {
-      const alertes = BT.verifierScore(lu.sets, t.reglages);
+      const alertes = BT.verifierScore(lu.sets, BT.formatMatch(t, mScore));
       if (alertes.length) {
         confirmer = true;
         messageScore('alerte', 'Ce score ne correspond pas aux réglages du tournoi.', alertes);
@@ -873,7 +1064,7 @@
       x.debut = null;
       x.terrain = null;
       delete x.forfait;
-      if (tt.reglages.appelAuto && BT.demarre(tt)) BT.remplirTerrains(tt);
+      if (BT.appelAutoActif(tt) && BT.demarre(tt)) BT.remplirTerrains(tt);
       return true;
     });
   });
@@ -898,20 +1089,24 @@
 
   function exporterClassement() {
     const nuls = BT.nulsPossibles(t);
-    const lignes = [['Rang', 'Équipe', 'Joueurs', 'Joués', 'Victoires'].concat(nuls ? ['Nuls'] : [], ['Défaites', 'Sets gagnés', 'Sets perdus', 'Points marqués', 'Points encaissés'])];
-    BT.classement(t).forEach((l) => {
-      lignes.push([l.rang, l.equipe.nom + (l.equipe.abandon ? ' (abandon)' : ''), l.equipe.joueurs || '', l.J, l.V].concat(nuls ? [l.N] : [], [l.D, l.setsP, l.setsC, l.ptsP, l.ptsC]));
+    const final = BT.statut(t) === 'termine' ? BT.classementFinal(t) : null;
+    const source = final || BT.classementPoules(t);
+    const avecParcours = !!(t.finale || BT.avecPoules(t));
+    const lignes = [['Rang', 'Équipe', 'Joueurs'].concat(avecParcours ? ['Parcours'] : [], ['Joués', 'Victoires'], nuls ? ['Nuls'] : [], ['Défaites', 'Sets gagnés', 'Sets perdus', 'Points marqués', 'Points encaissés'])];
+    source.forEach((l, i) => {
+      lignes.push([final ? (l.rang || '') : (BT.avecPoules(t) ? i + 1 : l.rang), l.equipe.nom + (l.equipe.abandon ? ' (abandon)' : ''), l.equipe.joueurs || '']
+        .concat(avecParcours ? [l.etape || ''] : [], [l.J, l.V], nuls ? [l.N] : [], [l.D, l.setsP, l.setsC, l.ptsP, l.ptsC]));
     });
     telecharger(nomFichier('classement'), lignes);
   }
 
   function exporterMatchs() {
     const etats = { attente: 'À jouer', en_cours: 'En cours', termine: 'Terminé' };
-    const lignes = [['Match', 'Équipe 1', 'Équipe 2', 'État', 'Terrain', 'Score', 'Gagnant', 'Début', 'Fin']];
+    const lignes = [['Match', 'Phase', 'Équipe 1', 'Équipe 2', 'État', 'Terrain', 'Score', 'Gagnant', 'Début', 'Fin']];
     t.matchs.slice().sort((x, y) => x.numero - y.numero).forEach((m) => {
       const r = BT.resultat(m);
       const fini = m.statut === 'termine';
-      lignes.push([m.numero, BT.nomEquipe(t, m.a), BT.nomEquipe(t, m.b), etats[m.statut] + (m.forfait ? ' (forfait ' + BT.nomEquipe(t, m.forfait) + ')' : ''),
+      lignes.push([m.numero, BT.etiquetteMatch(t, m), BT.nomEquipe(t, m.a), BT.nomEquipe(t, m.b), etats[m.statut] + (m.forfait ? ' (forfait ' + BT.nomEquipe(t, m.forfait) + ')' : ''),
         m.terrain || '', fini ? BT.texteScore(m).replace(/ · /g, ' / ') : '',
         fini ? (r.gagnant ? BT.nomEquipe(t, r.gagnant === 'a' ? m.a : m.b) : 'Nul') : '',
         m.debut ? BT.heure(m.debut) : '', m.fin && fini ? BT.heure(m.fin) : '']);
@@ -934,6 +1129,42 @@
         break;
       case 'lancer':
         agir((tt) => { BT.remplirTerrains(tt); return true; });
+        break;
+      case 'pause':
+        agir((tt) => {
+          tt.pause = !tt.pause;
+          if (!tt.pause && BT.appelAutoActif(tt) && BT.demarre(tt)) BT.remplirTerrains(tt);
+          return true;
+        });
+        break;
+      case 'retirer-annonce':
+        agir((tt) => { delete tt.annonce; return true; });
+        break;
+      case 'voir-lien':
+        changerOnglet('partager');
+        { const d = document.querySelector('#partager details'); if (d) d.open = true; }
+        break;
+      case 'lien-note':
+        try { localStorage.setItem('badminton:lien-note:' + id, 'oui'); } catch (err) { /* stockage indisponible */ }
+        rendreDirect();
+        break;
+      case 'fiches':
+        imprimerFiches();
+        break;
+      case 'lancer-finale':
+        el.disabled = true;
+        agir((tt) => {
+          if (tt.finale || !BT.phasePoulesFinie(tt)) return false;
+          BT.lancerPhaseFinale(tt);
+          return true;
+        });
+        break;
+      case 'annuler-finale':
+        if (confirm('Annuler la phase finale ? Ses matchs seront supprimés. Tu pourras la relancer depuis l’onglet Terrains.')) {
+          agir((tt) => BT.annulerPhaseFinale(tt)).then((r) => {
+            if (r && r.finale) toast('Impossible : un match de la phase finale a déjà commencé.');
+          });
+        }
         break;
       case 'priorite': {
         const active = el.dataset.valeur === 'oui';
@@ -1061,6 +1292,16 @@
     if (e.target.id === 'form-reglages') {
       e.preventDefault();
       enregistrerReglages();
+    }
+    if (e.target.id === 'form-annonce') {
+      e.preventDefault();
+      const texte = $('#annonce').value.trim();
+      $('#annonce').blur();
+      agir((tt) => {
+        if (texte) tt.annonce = { texte, date: Date.now() };
+        else delete tt.annonce;
+        return true;
+      });
     }
   });
 
