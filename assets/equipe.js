@@ -244,46 +244,71 @@
       + '<span>' + pluriel(moi ? moi.D : 0, 'défaite') + '</span>'
       + '</div></section>';
 
-    if (enCours) {
-      h += '<section class="prochain prochain--en_cours"><div class="prochain-titre"><span class="point-direct"></span>' + (enCours.phase === 'finale' ? esc(BT.etiquetteMatch(t, enCours)) + ' en cours' : 'Match en cours') + '</div>'
-        + '<div class="prochain-adversaire">contre ' + nom(adversaire(enCours)) + '</div>'
-        + '<div class="prochain-terrain">Terrain ' + enCours.terrain + '</div>'
-        + '<p class="note" style="margin:6px 0 0">Match ' + enCours.numero + ', commencé à ' + BT.heure(enCours.debut) + '</p>'
-        + blocEnvoi(enCours, e)
+    // Bandeau « dans la salle » : dernier numéro appelé et numéro du prochain match de l'équipe.
+    const actuel = BT.numeroActuel(t);
+    const prochain = aJouer[0] || null;
+    const avantProchain = prochain ? ordre.indexOf(prochain) : -1;
+    const numProchain = prochain ? BT.numero(t, prochain) : null;
+    if (st !== 'termine' && t.matchs.length) {
+      let ecart = '';
+      if (prochain && enCours) {
+        ecart = 'Ton match suivant est le n° ' + numProchain + (avantProchain === 0 ? ', appelé juste après.' : ', avec encore ' + pluriel(avantProchain, 'match') + ' à appeler avant.');
+      } else if (prochain) {
+        const vers = heurePrevue(prochain);
+        if (avantProchain === 0) ecart = st === 'pret' ? 'Ton équipe joue dès le début du tournoi.' : 'Ton prochain match est le prochain appelé.';
+        else ecart = 'Encore ' + pluriel(avantProchain, 'match') + ' à appeler avant le tien' + (vers ? ', vers ' + vers + ' (estimation)' : '') + '.';
+      } else if (enCours) {
+        ecart = 'C’est ton dernier match.';
+      }
+      h += '<section class="salle">'
+        + '<div class="salle-bloc"><span class="salle-label">' + (actuel ? 'En cours dans la salle' : 'Pas encore commencé') + '</span>'
+        + '<span class="salle-num">' + (actuel ? 'n° ' + actuel : '–') + '</span></div>'
+        + '<div class="salle-bloc salle-bloc--moi"><span class="salle-label">' + (enCours ? 'Ton match' : 'Ton prochain match') + '</span>'
+        + '<span class="salle-num">' + (enCours ? 'n° ' + BT.numero(t, enCours) : numProchain ? 'n° ' + numProchain : '–') + '</span></div>'
+        + (ecart ? '<p class="salle-ecart">' + ecart + '</p>' : '')
         + '</section>';
-    } else if (aJouer.length) {
-      const m = aJouer[0];
-      const avant = ordre.indexOf(m);
-      let attente;
-      if (st === 'pret') attente = avant === 0 ? 'Ce sera l’un des premiers matchs du tournoi.' : pluriel(avant, 'match') + ' passeront avant le tien.';
-      else attente = avant === 0 ? 'C’est le prochain match appelé.' : pluriel(avant, 'match') + ' seront appelés avant le tien.';
-      const vers = heurePrevue(m);
-      h += '<section class="prochain"><div class="prochain-titre">Ton prochain match' + (m.phase === 'finale' ? ', ' + esc(BT.etiquetteMatch(t, m).toLowerCase()) : '') + '</div>'
-        + '<div class="prochain-adversaire">contre ' + nom(adversaire(m)) + '</div>'
-        + (vers ? '<div class="prochain-terrain">Vers ' + vers + '<small> (estimation)</small></div>' : '')
-        + '<p style="margin:4px 0 6px">Match ' + m.numero + '. ' + attente + '</p>'
-        + '<p class="note" style="margin:0">Le numéro du terrain s’affiche ici dès que le match est appelé.</p>'
-        + blocAlerte()
-        + '</section>';
-    } else if (mes.length) {
-      h += '<section class="prochain"><div class="prochain-titre">Tes matchs</div>'
-        + '<div class="prochain-adversaire">Tous tes matchs sont joués</div>'
-        + (st === 'termine' && (rangFinal || (moi && !BT.avecPoules(t)))
-          ? '<p style="margin:0">Ton équipe termine ' + rangTexte(rangFinal || moi.rang) + ' sur ' + t.equipes.length + '.</p>' : '')
-        + '</section>';
-    } else {
-      h += '<section class="prochain"><div class="prochain-titre">Tes matchs</div>'
-        + '<p style="margin:0">Les matchs ne sont pas encore prêts.</p></section>';
     }
 
-    if (aJouer.length > (enCours ? 0 : 1)) {
-      const reste = enCours ? aJouer : aJouer.slice(1);
-      h += '<h2>Encore à jouer, dans l’ordre prévu</h2><ol class="liste-matchs">'
-        + reste.map((m) => {
+    if (enCours) {
+      h += '<section class="prochain prochain--en_cours"><div class="prochain-titre"><span class="point-direct"></span>'
+        + (enCours.phase === 'finale' ? esc(BT.etiquetteMatch(t, enCours)) + ' en cours' : 'Ton match en cours') + ', n° ' + BT.numero(t, enCours) + '</div>'
+        + '<div class="prochain-adversaire">contre ' + nom(adversaire(enCours)) + '</div>'
+        + '<div class="prochain-terrain">Terrain ' + enCours.terrain + '</div>'
+        + '<p class="note" style="margin:6px 0 0">Commencé à ' + BT.heure(enCours.debut) + '</p>'
+        + blocEnvoi(enCours, e)
+        + '</section>';
+    }
+    if (prochain) {
+      const vers = heurePrevue(prochain);
+      h += '<section class="prochain' + (enCours ? ' prochain--suivant' : '') + '"><div class="prochain-titre">Ton prochain match'
+        + (prochain.phase === 'finale' ? ', ' + esc(BT.etiquetteMatch(t, prochain).toLowerCase()) : '') + ', n° ' + numProchain + '</div>'
+        + '<div class="prochain-adversaire">contre ' + nom(adversaire(prochain)) + '</div>'
+        + (vers ? '<div class="prochain-terrain">Vers ' + vers + '<small> (estimation)</small></div>' : '')
+        + '<p class="note" style="margin:6px 0 0">Le numéro du terrain s’affiche ici dès que le match est appelé.</p>'
+        + (enCours ? '' : blocAlerte())
+        + '</section>';
+    }
+    if (!enCours && !prochain) {
+      if (mes.length) {
+        h += '<section class="prochain"><div class="prochain-titre">Tes matchs</div>'
+          + '<div class="prochain-adversaire">Tous tes matchs sont joués</div>'
+          + (st === 'termine' && (rangFinal || (moi && !BT.avecPoules(t)))
+            ? '<p style="margin:0">Ton équipe termine ' + rangTexte(rangFinal || moi.rang) + ' sur ' + t.equipes.length + '.</p>' : '')
+          + '</section>';
+      } else {
+        h += '<section class="prochain"><div class="prochain-titre">Tes matchs</div>'
+          + '<p style="margin:0">Les matchs ne sont pas encore prêts.</p></section>';
+      }
+    }
+
+    if (aJouer.length > 1) {
+      h += '<h2>Ensuite, dans l’ordre prévu</h2><ol class="liste-matchs">'
+        + aJouer.slice(1).map((m) => {
           const vers = heurePrevue(m);
-          return '<li class="match"><span class="match-num" title="Match ' + m.numero + '">' + m.numero + '</span>'
+          const avant = ordre.indexOf(m);
+          return '<li class="match"><span class="match-num" title="Match ' + BT.numero(t, m) + '">' + BT.numero(t, m) + '</span>'
             + '<span class="match-equipes">' + etiquette(m) + 'contre ' + nom(adversaire(m)) + '</span>'
-            + '<span class="match-etat"><span class="etiquette">' + (vers ? 'Vers ' + vers : 'À jouer') + '</span></span></li>';
+            + '<span class="match-etat"><span class="etiquette">' + (vers ? 'Vers ' + vers : 'Dans ' + pluriel(avant, 'match')) + '</span></span></li>';
         }).join('')
         + '</ol>';
     }
@@ -295,7 +320,7 @@
           const cote = m.a === e.id ? 'a' : 'b';
           const issue = !r.gagnant ? ['N', 'Nul'] : r.gagnant === cote ? ['V', 'Gagné'] : ['D', 'Perdu'];
           const score = m.forfait ? (m.forfait === e.id ? 'Forfait' : 'Forfait adverse') : esc(texteSets(versMoi(m.sets, m, e.id)));
-          return '<li class="match match--termine"><span class="match-num" title="Match ' + m.numero + '">' + m.numero + '</span>'
+          return '<li class="match match--termine"><span class="match-num" title="Match ' + BT.numero(t, m) + '">' + BT.numero(t, m) + '</span>'
             + '<span class="match-equipes">' + etiquette(m) + 'contre ' + nom(adversaire(m)) + '</span>'
             + '<span class="match-etat"><span class="match-score">' + score + '</span>'
             + '<span class="etiquette etiquette--' + issue[0] + '">' + issue[1] + '</span></span></li>';
@@ -306,7 +331,7 @@
     const surTerrains = BT.matchsEnCours(t);
     if (surTerrains.length) {
       h += '<h2>En ce moment sur les terrains</h2><ol class="liste-terrains">'
-        + surTerrains.map((m) => '<li' + (m.a === e.id || m.b === e.id ? ' class="moi"' : '') + '><span class="t-num">Terrain ' + m.terrain + '</span>'
+        + surTerrains.map((m) => '<li' + (m.a === e.id || m.b === e.id ? ' class="moi"' : '') + '><span class="t-num">Terrain ' + m.terrain + ' · n° ' + BT.numero(t, m) + '</span>'
           + '<span>' + nom(m.a) + ' <span class="contre">contre</span> ' + nom(m.b) + '</span></li>').join('')
         + '</ol>';
     }

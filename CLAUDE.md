@@ -19,6 +19,12 @@ commandes, commits et textes du site.
   `remplirTerrains()` : l'ordre affiché « à suivre » doit rester identique à l'ordre réel des appels.
   Règle d'appel (`choisir`) : match prioritaire, puis équipes qui ne sortent pas du terrain, puis
   équipes qui ont le moins joué, puis ordre de la file.
+- Numéros des matchs : un match reçoit son numéro quand il est appelé (`lancer`) ou terminé sans
+  appel (`numeroter`), donc les numéros suivent l'ordre réel des appels (1, 2, 3…). Un match en
+  attente affiche un numéro prévu (`numero(t, m)`, calculé avec `planifier`). Retour en attente
+  (report, résultat effacé) : le numéro est retiré et redonné au prochain appel. Toujours afficher
+  `BT.numero(t, m)`, jamais `m.numero`. La page des équipes montre le dernier numéro appelé
+  (`numeroActuel`) et le numéro du prochain match de l'équipe.
 - Heures estimées : `dureeMatch()` (médiane des 12 derniers matchs, sinon la durée maximum réglée),
   `planifier(t, durée)` et `finEstimee()`. Rien n'est affiché tant qu'aucune durée n'est connue.
 - Forfaits : `enregistrerForfait()` (un match, champ `forfait` = équipe perdante) et

@@ -946,6 +946,7 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .alerte-appel { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--bord); }
 .alerte-appel p { margin: 0 0 8px; font-size: .92rem; }
 .alerte-appel .note { margin: 8px 0 0; }
+.alerte-appel > .bouton { width: 100%; white-space: normal; text-align: center; }
 .alerte-appel--on p { color: var(--vert-700); font-weight: 650; }
 .liste-terrains { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .liste-terrains li {
@@ -1076,6 +1077,30 @@ details > summary.bouton::-webkit-details-marker { display: none; }
   .fiche .qr { width: 45mm; margin: 0 auto 3mm; border: 0; }
   .fiche-texte { font-size: 10pt; }
 }
+
+/* ---------- Page des équipes : où en est la salle ---------- */
+
+.salle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.salle-bloc {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: var(--rayon);
+  background: var(--carte);
+  border: 1px solid var(--bord);
+}
+.salle-bloc--moi { background: var(--jaune-clair); border-color: #f0dc8c; }
+.salle-label { font-size: .78rem; font-weight: 750; text-transform: uppercase; letter-spacing: .05em; color: var(--encre-douce); }
+.salle-num { font-size: 2rem; font-weight: 850; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--vert-800); }
+.salle-bloc--moi .salle-num { color: var(--vert-900); }
+.salle-ecart { grid-column: 1 / -1; margin: 0; font-weight: 650; }
+.prochain--suivant { margin-top: 12px; border-color: var(--vert-200); }
 
 /* ---------- Petits écrans ---------- */
 

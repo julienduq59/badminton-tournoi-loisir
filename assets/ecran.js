@@ -57,7 +57,7 @@
         const m = enCours.find((x) => x.terrain === num);
         const appel = m && Date.now() - m.debut < DUREE_APPEL;
         const tete = '<div class="e-terrain-tete"><div class="e-terrain-num"><small>Terrain</small>' + num + '</div>'
-          + (m ? '<div class="e-terrain-match">Match ' + m.numero + '</div>' : '') + '</div>';
+          + (m ? '<div class="e-terrain-match">Match ' + BT.numero(t, m) + '</div>' : '') + '</div>';
         if (!m) {
           return '<article class="e-terrain">' + tete + '<div class="e-court e-court--libre"><div class="e-court-libre">'
             + (st === 'pret' ? 'Bientôt' : 'Libre') + '</div></div></article>';
@@ -88,7 +88,7 @@
     } else if (liste.length) {
       const m = liste[0].m;
       const lbl = BT.etiquetteMatch(t, m);
-      h += '<div class="e-suivant"><div class="e-suivant-num">Match ' + m.numero + (lbl ? ' · ' + esc(lbl) : '') + '</div>'
+      h += '<div class="e-suivant"><div class="e-suivant-num">Match ' + BT.numero(t, m) + (lbl ? ' · ' + esc(lbl) : '') + '</div>'
         + '<div class="e-suivant-equipe">' + nom(m.a) + '</div><div class="e-suivant-contre">contre</div>'
         + '<div class="e-suivant-equipe">' + nom(m.b) + '</div></div>';
     } else {
@@ -97,7 +97,7 @@
     h += '</div><div class="e-suite-reste">';
     if (liste.length > 1) {
       h += '<h2>Ensuite</h2><ol class="e-liste" id="e-liste">'
-        + liste.slice(1, 12).map((x) => '<li><span class="e-num">' + x.m.numero + heure(x) + '</span>'
+        + liste.slice(1, 12).map((x) => '<li><span class="e-num">' + BT.numero(t, x.m) + heure(x) + '</span>'
           + '<span class="e-eq">' + nom(x.m.a) + '<span class="e-contre">contre</span>' + nom(x.m.b) + '</span></li>').join('')
         + '</ol>';
     }

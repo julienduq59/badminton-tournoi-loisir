@@ -267,7 +267,7 @@
     t.matchs = ordre.map(([a, b], i) => {
       const m = {
         id: 'm' + uid(6),
-        numero: i + 1,
+        numero: null,
         ordre: i + 1,
         a: t.equipes[a].id,
         b: t.equipes[b].id,
@@ -342,7 +342,47 @@
     joues.set(m.b, (joues.get(m.b) || 0) + 1);
   }
 
-  function lancer(m, terrain, maintenant) {
+  /* ---------- Numéros des matchs ----------
+     Un match reçoit son numéro quand il est appelé (ou terminé sans avoir été appelé) :
+     les numéros se suivent dans l'ordre réel des appels. Un match en attente a un numéro
+     prévu, calculé sur l'ordre d'appel estimé (planifier). */
+
+  function dernierNumero(t) {
+    return t.matchs.reduce((x, m) => (m.statut !== 'attente' && m.numero ? Math.max(x, m.numero) : x), 0);
+  }
+
+  function numeroter(t, m) {
+    if (m.statut === 'attente' || !m.numero) m.numero = dernierNumero(t) + 1;
+  }
+
+  // Calcul gardé en mémoire tant que l'état des matchs ne change pas.
+  const cacheNumeros = new WeakMap();
+  function numerosPrevus(t) {
+    const empreinte = t.reglages.terrains + '|' + t.matchs.map((m) => m.id + m.statut + (m.numero || '') + m.ordre + (m.priorite ? 'p' : '') + (m.debut || '')).join(',');
+    let entree = cacheNumeros.get(t);
+    if (!entree || entree.empreinte !== empreinte) {
+      const carte = new Map();
+      let n = dernierNumero(t);
+      planifier(t).forEach(({ m }) => carte.set(m.id, ++n));
+      entree = { empreinte, carte };
+      cacheNumeros.set(t, entree);
+    }
+    return entree.carte;
+  }
+
+  // Numéro à afficher pour un match (définitif s'il a été appelé, prévu sinon).
+  function numero(t, m) {
+    if (m.statut === 'attente') return numerosPrevus(t).get(m.id) || '';
+    return m.numero || '';
+  }
+
+  // Dernier numéro appelé : « on en est au match n° … ».
+  function numeroActuel(t) {
+    return dernierNumero(t);
+  }
+
+  function lancer(t, m, terrain, maintenant) {
+    numeroter(t, m);
     m.statut = 'en_cours';
     m.terrain = terrain;
     m.debut = maintenant || Date.now();
@@ -352,17 +392,17 @@
 
   // Appelle un match sur chaque terrain libre (ou seulement sur les terrains
   // indiqués). Retourne les matchs appelés.
-  function remplirTerrains(t, eviter, seulement) {
+  function remplirTerrains(t, eviter, seulement, exclus) {
     const occupees = new Set();
     matchsEnCours(t).forEach((m) => { occupees.add(m.a); occupees.add(m.b); });
-    const attente = matchsEnAttente(t);
+    const attente = matchsEnAttente(t).filter((m) => !exclus || !exclus.has(m.id));
     const joues = compterJoues(t);
     const appeles = [];
     const cibles = terrainsLibres(t).filter((n) => !seulement || seulement.includes(n));
     for (const terrain of cibles) {
       const m = choisir(attente, occupees, eviter, joues);
       if (!m) break;
-      lancer(m, terrain);
+      lancer(t, m, terrain);
       prendre(m, attente, occupees, joues);
       appeles.push(m);
     }
@@ -488,10 +528,12 @@
   function reporter(t, m) {
     const etaitEnCours = m.statut === 'en_cours';
     m.statut = 'attente';
+    m.numero = null;
     m.terrain = null;
     m.debut = null;
     m.ordre = Math.max(0, ...t.matchs.map((x) => x.ordre)) + 1;
-    if (etaitEnCours && appelAutoActif(t)) remplirTerrains(t, new Set([m.a, m.b]));
+    // Le match reporté n'est pas rappelé tout de suite sur le terrain qu'il libère.
+    if (etaitEnCours && appelAutoActif(t)) remplirTerrains(t, new Set([m.a, m.b]), null, new Set([m.id]));
   }
 
   /* ---------- Scores ---------- */
@@ -557,6 +599,7 @@
 
   function enregistrerScore(t, m, sets) {
     const etaitEnCours = m.statut === 'en_cours';
+    numeroter(t, m);
     m.sets = sets;
     m.statut = 'termine';
     delete m.forfait;
@@ -587,6 +630,7 @@
     t.matchs.forEach((m) => {
       if (m.statut === 'termine' || (m.a !== equipeId && m.b !== equipeId)) return;
       if (m.statut === 'en_cours') { liberees.add(m.a); liberees.add(m.b); }
+      numeroter(t, m);
       m.sets = setsForfait(formatMatch(t, m), equipeId === m.b);
       m.statut = 'termine';
       m.fin = Date.now();
@@ -609,6 +653,7 @@
       m.debut = null;
       m.terrain = null;
       delete m.forfait;
+      m.numero = null;
     });
     if (t.finale) avancerTableau(t);
     if (demarre(t) && appelAutoActif(t)) remplirTerrains(t);
@@ -758,7 +803,7 @@
   function creerMatchFinale(t, v) {
     const plusGrand = (champ) => t.matchs.reduce((x, m) => Math.max(x, m[champ] || 0), 0);
     const m = {
-      id: 'm' + uid(6), numero: plusGrand('numero') + 1, ordre: plusGrand('ordre') + 1,
+      id: 'm' + uid(6), numero: null, ordre: plusGrand('ordre') + 1,
       a: v.a, b: v.b, statut: 'attente', terrain: null, debut: null, fin: null, sets: [],
       phase: 'finale', tour: v.tour, slot: v.slot,
     };
@@ -767,6 +812,7 @@
     // Une équipe qui a abandonné perd tout de suite par forfait.
     const absente = [m.a, m.b].find((x) => equipe(t, x).abandon);
     if (absente) {
+      numeroter(t, m);
       m.sets = setsForfait(formatMatch(t, m), absente === m.b);
       m.statut = 'termine';
       m.fin = Date.now();
@@ -944,7 +990,7 @@
       let info = '';
       if (m && m.statut === 'termine') info = m.forfait ? 'Forfait de ' + esc(nomEquipe(t, m.forfait)) : esc(texteScore(m));
       else if (m && m.statut === 'en_cours') info = '<strong>Terrain ' + m.terrain + '</strong>, en cours';
-      else if (m) info = 'Match ' + m.numero + ', à jouer';
+      else if (m) info = 'Match ' + numero(t, m) + ', à jouer';
       return '<div class="tf-match' + (m && m.statut === 'en_cours' ? ' tf-match--en_cours' : '') + '">'
         + ligne(m ? m.a : a, r && r.gagnant === 'a') + ligne(m ? m.b : b, r && r.gagnant === 'b')
         + (info ? '<div class="tf-info">' + info + '</div>' : '') + '</div>';
@@ -965,6 +1011,7 @@
   // Remet un match terminé à jouer (correction).
   function effacerResultat(t, m) {
     m.statut = 'attente';
+    m.numero = null;
     m.sets = [];
     m.fin = null;
     m.debut = null;
@@ -1113,6 +1160,7 @@
     nouveauTournoi, ajusterEquipes, equipe, nomEquipe, statut, texteFormat,
     verifierFormat, paires, ordonner, genererMatchs,
     matchsEnCours, matchsEnAttente, terrainsLibres, remplirTerrains, lancer, demarre, prochains, reporter, appelAutoActif,
+    numero, numeroActuel,
     planifier, dureeMatch, finEstimee, prioriser,
     resultat, texteScore, verifierSet, verifierScore, enregistrerScore,
     setsForfait, enregistrerForfait, abandonEquipe, annulerAbandon, effacerResultat,

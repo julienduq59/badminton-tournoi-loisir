@@ -146,7 +146,7 @@
       if (!liste.length) return null;
       const accord = liste.every((p) => BT.memesSets(p.sets, liste[0].sets));
       return { m, liste, accord };
-    }).filter(Boolean).sort((x, y) => (x.m.terrain || 99) - (y.m.terrain || 99) || x.m.numero - y.m.numero);
+    }).filter(Boolean).sort((x, y) => (x.m.terrain || 99) - (y.m.terrain || 99) || BT.numero(t, x.m) - BT.numero(t, y.m));
   }
 
   async function validerScore(matchId, sets) {
@@ -276,7 +276,7 @@
           + '<button type="button" class="bouton" data-action="reporter" data-id="' + m.id + '">Reporter</button>';
       }
       return '<article class="terrain' + (liste.length ? ' terrain--recu' : '') + '">'
-        + '<div class="terrain-tete"><span>Terrain ' + n + '</span><span class="num-match">' + (BT.etiquetteMatch(t, m) ? esc(BT.etiquetteMatch(t, m)) + ' · ' : '') + 'Match ' + m.numero + '</span></div>'
+        + '<div class="terrain-tete"><span>Terrain ' + n + '</span><span class="num-match">' + (BT.etiquetteMatch(t, m) ? esc(BT.etiquetteMatch(t, m)) + ' · ' : '') + 'Match ' + BT.numero(t, m) + '</span></div>'
         + '<div class="court"><div class="court-cote">' + nomComplet(m.a) + '</div><div class="court-filet"></div>'
         + '<div class="court-cote">' + nomComplet(m.b) + '</div></div>'
         + '<div class="terrain-depuis">Commencé à ' + BT.heure(m.debut) + ', ' + chronoHtml(m.debut) + '</div>'
@@ -308,7 +308,7 @@
         : '<span class="etiquette etiquette--D">Scores différents</span>';
     }
     return '<li class="match match--proposition">'
-      + '<span class="match-num" title="Match ' + m.numero + '">' + m.numero + '</span>'
+      + '<span class="match-num" title="Match ' + BT.numero(t, m) + '">' + BT.numero(t, m) + '</span>'
       + '<span class="match-equipes">' + nom(m.a) + '<span class="contre">contre</span>' + nom(m.b)
       + (m.statut === 'en_cours' ? ' <span class="etiquette etiquette--en_cours">Terrain ' + m.terrain + '</span>' : '') + '</span>'
       + '<span class="match-etat propositions">' + details + accordTexte + '</span>'
@@ -458,7 +458,7 @@
       actions.push('<button type="button" class="bouton petit" data-action="score" data-id="' + m.id + '">Modifier le score</button>');
     }
     return '<li class="match match--' + m.statut + (o.suivant ? ' match--suivant' : '') + '">'
-      + '<span class="match-num" title="Match ' + m.numero + '">' + m.numero + '</span>'
+      + '<span class="match-num" title="Match ' + BT.numero(t, m) + '">' + BT.numero(t, m) + '</span>'
       + '<span class="match-equipes">' + (BT.etiquetteMatch(t, m) ? '<span class="match-tour' + (m.phase === 'finale' ? ' match-tour--finale' : '') + '">' + esc(BT.etiquetteMatch(t, m)) + '</span>' : '')
       + '<span' + clsA + '>' + nom(m.a) + '</span><span class="contre">contre</span><span' + clsB + '>' + nom(m.b) + '</span></span>'
       + '<span class="match-etat">' + etat + '</span>'
@@ -476,7 +476,7 @@
     const garder = (m) => !filtreEquipe || m.a === filtreEquipe || m.b === filtreEquipe;
     const enCours = BT.matchsEnCours(t).filter(garder);
     const aJouer = BT.prochains(t).filter(garder);
-    const termines = t.matchs.filter((m) => m.statut === 'termine' && garder(m)).sort((x, y) => x.numero - y.numero);
+    const termines = t.matchs.filter((m) => m.statut === 'termine' && garder(m)).sort((x, y) => BT.numero(t, x) - BT.numero(t, y));
     const groupes = [
       { cle: 'en_cours', titre: 'En cours', liste: enCours },
       { cle: 'attente', titre: 'À jouer, dans l’ordre prévu', liste: aJouer },
@@ -960,7 +960,7 @@
     const depart = (m.sets && m.sets.length) ? m.sets : (recus[0] ? recus[0].sets : []);
     const reg = BT.formatMatch(t, m);
     const n = Math.max(reg.sets, depart.length, ...recus.map((p) => p.sets.length));
-    $('#score-titre').textContent = 'Match ' + m.numero + (m.statut === 'en_cours' ? ', terrain ' + m.terrain : '');
+    $('#score-titre').textContent = 'Match ' + BT.numero(t, m) + (m.statut === 'en_cours' ? ', terrain ' + m.terrain : '');
     $('#score-format').textContent = (BT.etiquetteMatch(t, m) ? BT.etiquetteMatch(t, m) + '. ' : '') + BT.texteFormat(reg);
     $('#score-recus').innerHTML = recus.map((p, i) => '<div class="score-recu"><span>Score envoyé par ' + nom(p.equipeId) + ' : <strong>' + esc(texteSets(p.sets)) + '</strong></span>'
       + '<button type="button" class="bouton petit" data-reprendre="' + i + '">Reprendre</button></div>').join('');
@@ -1052,7 +1052,7 @@
 
   $('#score-effacer').addEventListener('click', () => {
     const m = trouver(t, matchScoreId);
-    if (!m || !confirm('Effacer le résultat du match ' + m.numero + ' ? Il repassera dans les matchs à jouer.')) return;
+    if (!m || !confirm('Effacer le résultat du match ' + BT.numero(t, m) + ' ? Il repassera dans les matchs à jouer.')) return;
     const matchId = matchScoreId;
     dialogue.close();
     agir((tt) => {
@@ -1074,7 +1074,7 @@
     if (!b) return;
     const m = trouver(t, matchScoreId);
     const perdant = b.dataset.forfait;
-    if (!m || !confirm(BT.nomEquipe(t, perdant) + ' déclare forfait pour le match ' + m.numero + ' ? L’autre équipe gagne le match.')) return;
+    if (!m || !confirm(BT.nomEquipe(t, perdant) + ' déclare forfait pour le match ' + BT.numero(t, m) + ' ? L’autre équipe gagne le match.')) return;
     const matchId = matchScoreId;
     dialogue.close();
     agir((tt) => {
@@ -1103,10 +1103,10 @@
   function exporterMatchs() {
     const etats = { attente: 'À jouer', en_cours: 'En cours', termine: 'Terminé' };
     const lignes = [['Match', 'Phase', 'Équipe 1', 'Équipe 2', 'État', 'Terrain', 'Score', 'Gagnant', 'Début', 'Fin']];
-    t.matchs.slice().sort((x, y) => x.numero - y.numero).forEach((m) => {
+    t.matchs.slice().sort((x, y) => BT.numero(t, x) - BT.numero(t, y)).forEach((m) => {
       const r = BT.resultat(m);
       const fini = m.statut === 'termine';
-      lignes.push([m.numero, BT.etiquetteMatch(t, m), BT.nomEquipe(t, m.a), BT.nomEquipe(t, m.b), etats[m.statut] + (m.forfait ? ' (forfait ' + BT.nomEquipe(t, m.forfait) + ')' : ''),
+      lignes.push([BT.numero(t, m), BT.etiquetteMatch(t, m), BT.nomEquipe(t, m.a), BT.nomEquipe(t, m.b), etats[m.statut] + (m.forfait ? ' (forfait ' + BT.nomEquipe(t, m.forfait) + ')' : ''),
         m.terrain || '', fini ? BT.texteScore(m).replace(/ · /g, ' / ') : '',
         fini ? (r.gagnant ? BT.nomEquipe(t, r.gagnant === 'a' ? m.a : m.b) : 'Nul') : '',
         m.debut ? BT.heure(m.debut) : '', m.fin && fini ? BT.heure(m.fin) : '']);
@@ -1221,12 +1221,12 @@
         break;
       }
       case 'refuser':
-        if (m && confirm('Refuser le score envoyé pour le match ' + m.numero + ' ? Les joueurs pourront en envoyer un autre.')) {
+        if (m && confirm('Refuser le score envoyé pour le match ' + BT.numero(t, m) + ' ? Les joueurs pourront en envoyer un autre.')) {
           D.retirerProposition(id, matchId).catch((err) => toast('Impossible de refuser. ' + err.message));
         }
         break;
       case 'reporter':
-        if (m && confirm('Reporter le match ' + m.numero + ' (' + BT.nomEquipe(t, m.a) + ' contre ' + BT.nomEquipe(t, m.b) + ') ? Il passe à la fin de la liste des matchs à jouer.')) {
+        if (m && confirm('Reporter le match ' + BT.numero(t, m) + ' (' + BT.nomEquipe(t, m.a) + ' contre ' + BT.nomEquipe(t, m.b) + ') ? Il passe à la fin de la liste des matchs à jouer.')) {
           agir((tt) => {
             const x = trouver(tt, matchId);
             if (!x || x.statut === 'termine') return false;
@@ -1247,7 +1247,7 @@
           BT.matchsEnCours(tt).forEach((y) => { occupees.add(y.a); occupees.add(y.b); });
           const libres = BT.terrainsLibres(tt);
           if (!x || x.statut !== 'attente' || !libres.length || occupees.has(x.a) || occupees.has(x.b)) return false;
-          BT.lancer(x, libres[0]);
+          BT.lancer(tt, x, libres[0]);
           return true;
         });
         break;
