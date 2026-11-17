@@ -47,9 +47,10 @@
   }
 
   // Vue affichée : l'équipe, le classement en direct ou le récap à télécharger.
-  const VUES = ['equipe', 'classement', 'recap'];
+  const VUES = ['equipe', 'classement', 'recap', 'partager'];
   let vue = VUES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'equipe';
   let recap = null; // { url, blob, nom } de la dernière image créée
+  let partageEquipe = false; // QR code de l'équipe (pour un partenaire) plutôt que celui du tournoi
 
   // Formulaire d'envoi du score (conservé quand la page se met à jour).
   let envoi = null; // { matchId, saisie: [[a, b], ...], confirmer, message }
@@ -360,7 +361,8 @@
         + '</tbody></table></div>';
     }
 
-    h += '<p style="margin-top:24px"><a class="bouton" href="equipe.html?t=' + encodeURIComponent(t.id) + '" data-changer>Changer d’équipe</a></p>'
+    h += '<div class="actions" style="margin-top:24px"><a class="bouton" href="equipe.html?t=' + encodeURIComponent(t.id) + '" data-changer>Changer d’équipe</a>'
+      + '<button type="button" class="bouton" data-vue="partager">Partager le QR code</button></div>'
       + '<p class="note">' + esc(BT.texteFormat(t.reglages)) + '. Mis à jour à ' + BT.heure(t.maj) + '.</p>';
     contenu.innerHTML = h;
   }
@@ -473,6 +475,62 @@
     genererRecap();
   }
 
+  /* ---------- Partager le QR code ---------- */
+
+  function lienPartage() {
+    const p = { t: t.id };
+    if (partageEquipe && equipeId) p.e = equipeId;
+    return BT.urlPage('equipe.html', p);
+  }
+
+  function vuePartager() {
+    if (!equipeId) partageEquipe = false;
+    const url = lienPartage();
+    const e = equipeId ? BT.equipe(t, equipeId) : null;
+    let h = '<section class="partage">';
+    if (e) {
+      h += '<div class="filtres partage-choix" role="group" aria-label="QR code à partager">'
+        + '<button type="button" data-action="qr-tournoi" aria-pressed="' + !partageEquipe + '">Tout le tournoi</button>'
+        + '<button type="button" data-action="qr-equipe" aria-pressed="' + partageEquipe + '">Mon équipe</button></div>';
+    }
+    h += '<p class="partage-texte">' + (partageEquipe
+      ? 'Pour quelqu’un de ton équipe. En scannant ce QR code, il arrive directement sur la page de l’équipe ' + esc(e.nom) + '.'
+      : 'Montre ce QR code à un autre joueur. Il le scanne avec l’appareil photo de son téléphone, puis choisit son équipe.') + '</p>'
+      + '<div class="qr qr-partage">' + BT.qrSvg(url) + '</div>'
+      + '<div class="actions partage-actions">'
+      + (navigator.share ? '<button type="button" class="bouton principal grand" data-action="partager-lien">Envoyer le lien</button>' : '')
+      + '<button type="button" class="bouton grand" data-action="copier-lien">Copier le lien</button></div>'
+      + '<p class="lien-texte">' + esc(url) + '</p>'
+      + '<p class="note">Si le QR code ne passe pas, monte la luminosité de ton écran.</p>'
+      + '</section>';
+    contenu.innerHTML = h;
+  }
+
+  function copier(texte, bouton) {
+    const fait = () => {
+      const avant = bouton.textContent;
+      bouton.textContent = 'Lien copié';
+      setTimeout(() => { if (bouton.isConnected) bouton.textContent = avant; }, 2000);
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(texte).then(fait, () => copierAncien(texte) && fait());
+    } else if (copierAncien(texte)) fait();
+  }
+
+  function copierAncien(texte) {
+    const zone = document.createElement('textarea');
+    zone.value = texte;
+    zone.setAttribute('readonly', '');
+    zone.style.position = 'fixed';
+    zone.style.opacity = '0';
+    document.body.appendChild(zone);
+    zone.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+    zone.remove();
+    return ok;
+  }
+
   function afficherOnglets() {
     const nav = document.getElementById('onglets-tel');
     nav.hidden = false;
@@ -494,6 +552,11 @@
     if (equipeId && !t.equipes.some((e) => e.id === equipeId)) equipeId = null;
     afficherOnglets();
     if (vue === 'classement') { vueClassement(); return; }
+    if (vue === 'partager') {
+      // Le QR code ne change pas avec les résultats : pas besoin de le redessiner à chaque mise à jour.
+      if (force || !contenu.querySelector('.partage')) vuePartager();
+      return;
+    }
     if (vue === 'recap') {
       // L'image n'est pas recréée à chaque résultat : le bouton signale qu'il y a du nouveau.
       if (force || !document.getElementById('recap-image')) vueRecap();
@@ -564,6 +627,21 @@
           const fichier = new File([recap.blob], recap.nom, { type: 'image/png' });
           navigator.share({ files: [fichier], title: t.nom, text: 'Mon récap du tournoi ' + t.nom }).catch(() => {});
         }
+        break;
+      case 'qr-tournoi':
+      case 'qr-equipe':
+        partageEquipe = el.dataset.action === 'qr-equipe';
+        vuePartager();
+        break;
+      case 'partager-lien':
+        navigator.share({
+          title: t.nom,
+          text: (partageEquipe && equipeId ? 'Suis notre équipe ' + BT.nomEquipe(t, equipeId) : 'Suis « ' + t.nom + ' »') + ' sur ton téléphone',
+          url: lienPartage(),
+        }).catch(() => {});
+        break;
+      case 'copier-lien':
+        copier(lienPartage(), el);
         break;
       case 'retirer':
         if (enCours) {

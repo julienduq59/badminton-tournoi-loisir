@@ -606,7 +606,8 @@
     let h = '<div class="carte"><div class="qr-carte"><div class="qr">' + BT.qrSvg(urlEquipes) + '</div><div>'
       + '<h2>Page des équipes</h2>'
       + '<p>Les joueurs scannent ce QR code et choisissent leur équipe. Ils voient leur prochain match et son terrain, les matchs déjà joués avec les scores, ceux qui restent et le classement.'
-      + (t.reglages.scoresJoueurs ? ' Ils peuvent aussi envoyer le score de leur match, que tu valides ensuite.' : '') + '</p>'
+      + (t.reglages.scoresJoueurs ? ' Ils peuvent aussi envoyer le score de leur match, que tu valides ensuite.' : '')
+      + ' Une fois connectés, ils peuvent montrer ce QR code à d’autres joueurs depuis leur téléphone (onglet Partager).</p>'
       + '<p class="lien-texte">' + esc(urlEquipes) + '</p>'
       + '<div class="actions"><button type="button" class="bouton" data-action="copier" data-texte="' + esc(urlEquipes) + '">Copier le lien</button>'
       + '<a class="bouton" href="' + esc(urlEquipes) + '" target="_blank" rel="noopener">Ouvrir la page</a>'

@@ -47,8 +47,10 @@ commandes, commits et textes du site.
   crée ou corrige les matchs suivants à chaque résultat (un match pas terminé suit toujours le
   tableau). `classementFinal()` donne les places finales, `formatMatch()` le format propre à la
   phase finale. Un match de phase finale doit avoir un vainqueur.
-- Page des équipes : onglets « Mon équipe », « Classement » (en direct) et « Récap » (adresse
-  `#classement` / `#recap`). Le récap est une image dessinée sur canvas par `assets/recap.js`
+- Page des équipes : onglets « Mon équipe », « Classement » (en direct), « Récap » et « Partager »
+  (adresse `#classement` / `#recap` / `#partager`). « Partager » montre le QR code du tournoi, ou celui de
+  l'équipe (`&e=`) pour un partenaire, avec envoi du lien (Web Share) et copie ; la vue n'est pas redessinée
+  à chaque mise à jour du tournoi. Le récap est une image dessinée sur canvas par `assets/recap.js`
   (`BT.dessinerRecap(t, equipeId)`, récap du tournoi sans équipe) à partir de `statsEquipe`,
   `statsTournoi` et `placeEquipe` (commun.js) ; elle n'est recréée que sur demande.
 - Repos minimum (`reglages.reposMin`, minutes) : `remplirTerrains` n'appelle pas un match dont une
