@@ -17,6 +17,7 @@
     appelAuto: true,
     scoresJoueurs: true,
     validationAuto: false,
+    dureeLimite: 0,
   };
 
   // Score maximum proposé par défaut : 21 points → 30, 15 points → 21.
@@ -84,7 +85,7 @@
   function statut(t) {
     if (!t.matchs.length) return 'preparation';
     if (t.matchs.every((m) => m.statut === 'termine')) return 'termine';
-    if (t.matchs.some((m) => m.statut !== 'attente')) return 'en_cours';
+    if (demarre(t)) return 'en_cours';
     return 'pret';
   }
 
@@ -107,6 +108,7 @@
         ? ', 2 points d’écart (maximum ' + reg.plafond + ')'
         : ', 2 points d’écart';
     }
+    if (reg.dureeLimite > 0) s += ', ' + reg.dureeLimite + ' minutes maximum';
     return s;
   }
 
@@ -217,14 +219,15 @@
   }
 
   // Choisit le prochain match parmi ceux dont les deux équipes sont libres :
-  // d'abord ceux où aucune équipe ne sort du terrain, puis les équipes qui ont
-  // le moins joué, puis l'ordre de la file.
+  // d'abord les matchs mis en priorité par un organisateur, puis ceux où aucune
+  // équipe ne sort du terrain, puis les équipes qui ont le moins joué, puis l'ordre de la file.
   function choisir(attente, occupees, eviter, joues) {
     let meilleur = null;
     let cleMeilleure = null;
     for (const m of attente) {
       if (occupees.has(m.a) || occupees.has(m.b)) continue;
       const cle = [
+        m.priorite ? 0 : 1,
         eviter && (eviter.has(m.a) || eviter.has(m.b)) ? 1 : 0,
         (joues.get(m.a) || 0) + (joues.get(m.b) || 0),
         m.ordre,
@@ -261,6 +264,7 @@
     m.terrain = terrain;
     m.debut = maintenant || Date.now();
     m.fin = null;
+    delete m.priorite;
   }
 
   // Appelle un match sur chaque terrain libre (ou seulement sur les terrains
@@ -282,41 +286,85 @@
     return appeles;
   }
 
+  // Le tournoi a commencé dès qu'un match a été appelé ou joué (un forfait seul ne compte pas).
   function demarre(t) {
-    return t.matchs.some((m) => m.statut !== 'attente');
+    return t.matchs.some((m) => m.statut === 'en_cours' || (m.statut === 'termine' && !m.forfait));
   }
 
   // Ordre prévu des matchs en attente, en supposant que les matchs se terminent
   // dans l'ordre où ils ont commencé (même règle que l'appel automatique).
-  function prochains(t) {
+  // Avec une durée de match (en ms), donne aussi l'heure de début estimée de chacun.
+  function planifier(t, duree, maintenant) {
+    maintenant = maintenant || Date.now();
+    const D = duree || 0;
     const T = Math.max(1, t.reglages.terrains);
-    const enJeu = t.matchs.filter((m) => m.statut === 'en_cours').sort((x, y) => (x.debut || 0) - (y.debut || 0));
+    const enJeu = t.matchs.filter((m) => m.statut === 'en_cours')
+      .sort((x, y) => (x.debut || 0) - (y.debut || 0))
+      .map((m) => ({ m, fin: Math.max(maintenant, (m.debut || maintenant) + D) }));
     const attente = matchsEnAttente(t);
     const occupees = new Set();
-    enJeu.forEach((m) => { occupees.add(m.a); occupees.add(m.b); });
+    enJeu.forEach(({ m }) => { occupees.add(m.a); occupees.add(m.b); });
     const joues = compterJoues(t);
     let eviter = null;
+    let horloge = maintenant;
     const resultat = [];
     while (attente.length) {
       if (enJeu.length < T) {
         const m = choisir(attente, occupees, eviter, joues);
         if (m) {
-          resultat.push(m);
+          resultat.push({ m, heure: D ? horloge : null });
           prendre(m, attente, occupees, joues);
-          enJeu.push(m);
+          enJeu.push({ m, fin: horloge + D });
           continue;
         }
       }
       const fini = enJeu.shift();
       if (!fini) {
-        resultat.push.apply(resultat, attente);
+        attente.forEach((m) => resultat.push({ m, heure: null }));
         break;
       }
-      occupees.delete(fini.a);
-      occupees.delete(fini.b);
-      eviter = new Set([fini.a, fini.b]);
+      horloge = Math.max(horloge, fini.fin);
+      occupees.delete(fini.m.a);
+      occupees.delete(fini.m.b);
+      eviter = new Set([fini.m.a, fini.m.b]);
     }
     return resultat;
+  }
+
+  function prochains(t) {
+    return planifier(t).map((x) => x.m);
+  }
+
+  // Durée habituelle d'un match (en ms) : médiane des derniers matchs joués,
+  // à défaut la durée limite réglée. null tant qu'on ne peut pas l'estimer.
+  function dureeMatch(t) {
+    const durees = t.matchs
+      .filter((m) => m.statut === 'termine' && !m.forfait && m.debut && m.fin)
+      .sort((x, y) => y.fin - x.fin)
+      .slice(0, 12)
+      .map((m) => m.fin - m.debut)
+      .filter((d) => d >= 60 * 1000 && d <= 3 * 3600 * 1000)
+      .sort((a, b) => a - b);
+    if (durees.length >= 3) return durees[Math.floor(durees.length / 2)];
+    if (t.reglages.dureeLimite > 0) return t.reglages.dureeLimite * 60 * 1000;
+    return null;
+  }
+
+  // Heure de fin estimée du tournoi, ou null.
+  function finEstimee(t, maintenant) {
+    maintenant = maintenant || Date.now();
+    const D = dureeMatch(t);
+    if (!D || !demarre(t)) return null;
+    let fin = 0;
+    t.matchs.forEach((m) => { if (m.statut === 'en_cours') fin = Math.max(fin, maintenant, (m.debut || maintenant) + D); });
+    planifier(t, D, maintenant).forEach((x) => { if (x.heure) fin = Math.max(fin, x.heure + D); });
+    return fin || null;
+  }
+
+  // Un match prioritaire est appelé avant les autres dès que ses deux équipes sont libres.
+  function prioriser(m, active) {
+    if (active) m.priorite = true;
+    else delete m.priorite;
   }
 
   // Passe un match en fin de file (équipe absente, erreur d'appel…).
@@ -353,6 +401,8 @@
     const g = Math.max(a, b);
     const p = Math.min(a, b);
     const P = reg.points;
+    // Avec une durée maximum, un set peut s'arrêter avant le nombre de points.
+    if (reg.dureeLimite > 0 && g < P) return null;
     if (!reg.ecart2) return g === P ? null : 'le set se joue en ' + P + ' points';
     const L = reg.plafond > P ? reg.plafond : Infinity;
     if (g === P && p <= P - 2) return null;
@@ -371,6 +421,7 @@
       if (msg) alertes.push('Set ' + (i + 1) + ' (' + a + '-' + b + ') : ' + msg + '.');
     });
     const n = reg.sets;
+    if (reg.dureeLimite > 0) return alertes;
     if (reg.auMeilleur && n > 1 && n % 2 === 1) {
       const majorite = (n + 1) / 2;
       let ga = 0, gb = 0, fin = -1;
@@ -391,8 +442,56 @@
     const etaitEnCours = m.statut === 'en_cours';
     m.sets = sets;
     m.statut = 'termine';
+    delete m.forfait;
+    delete m.priorite;
     if (etaitEnCours || !m.fin) m.fin = Date.now();
     if (etaitEnCours && t.reglages.appelAuto) remplirTerrains(t, new Set([m.a, m.b]));
+  }
+
+  // Score donné par un forfait : l'équipe présente gagne tous les sets nécessaires sans perdre de point.
+  function setsForfait(reg, gagnantEstA) {
+    const n = reg.auMeilleur && reg.sets % 2 === 1 ? (reg.sets + 1) / 2 : reg.sets;
+    return Array.from({ length: n }, () => (gagnantEstA ? [reg.points, 0] : [0, reg.points]));
+  }
+
+  // Forfait sur un seul match.
+  function enregistrerForfait(t, m, perdantId) {
+    enregistrerScore(t, m, setsForfait(t.reglages, perdantId === m.b));
+    m.forfait = perdantId;
+  }
+
+  // Abandon d'une équipe : tous ses matchs restants sont perdus par forfait.
+  function abandonEquipe(t, equipeId) {
+    const lance = demarre(t);
+    const e = t.equipes.find((x) => x.id === equipeId);
+    if (e) e.abandon = true;
+    const liberees = new Set();
+    t.matchs.forEach((m) => {
+      if (m.statut === 'termine' || (m.a !== equipeId && m.b !== equipeId)) return;
+      if (m.statut === 'en_cours') { liberees.add(m.a); liberees.add(m.b); }
+      m.sets = setsForfait(t.reglages, equipeId === m.b);
+      m.statut = 'termine';
+      m.fin = Date.now();
+      m.forfait = equipeId;
+      delete m.priorite;
+    });
+    if (lance && t.reglages.appelAuto) remplirTerrains(t, liberees);
+  }
+
+  // Annule l'abandon : les matchs perdus par forfait pour cette équipe redeviennent à jouer.
+  function annulerAbandon(t, equipeId) {
+    const e = t.equipes.find((x) => x.id === equipeId);
+    if (e) delete e.abandon;
+    t.matchs.forEach((m) => {
+      if (m.statut !== 'termine' || m.forfait !== equipeId) return;
+      m.statut = 'attente';
+      m.sets = [];
+      m.fin = null;
+      m.debut = null;
+      m.terrain = null;
+      delete m.forfait;
+    });
+    if (demarre(t) && t.reglages.appelAuto) remplirTerrains(t);
   }
 
   /* ---------- Classement ---------- */
@@ -419,8 +518,25 @@
       diffSets: l.setsP - l.setsC,
       diffPts: l.ptsP - l.ptsC,
     }));
-    const egal = (x, y) => x.score === y.score && x.diffSets === y.diffSets && x.diffPts === y.diffPts && x.ptsP === y.ptsP;
-    lignes.sort((x, y) => y.score - x.score || y.diffSets - x.diffSets || y.diffPts - x.diffPts
+    // Deux équipes seules à égalité de victoires : le résultat de leur match les départage.
+    const parScore = new Map();
+    lignes.forEach((l) => parScore.set(l.score, (parScore.get(l.score) || 0) + 1));
+    const duel = (x, y) => {
+      if (parScore.get(x.score) !== 2) return 0;
+      let bilan = 0;
+      t.matchs.forEach((m) => {
+        if (m.statut !== 'termine') return;
+        const xEstA = m.a === x.equipe.id && m.b === y.equipe.id;
+        const xEstB = m.b === x.equipe.id && m.a === y.equipe.id;
+        if (!xEstA && !xEstB) return;
+        const r = resultat(m);
+        if (r.gagnant) bilan += (r.gagnant === 'a') === xEstA ? 1 : -1;
+      });
+      return Math.sign(bilan);
+    };
+    const egal = (x, y) => x.score === y.score && duel(x, y) === 0 && x.diffSets === y.diffSets
+      && x.diffPts === y.diffPts && x.ptsP === y.ptsP;
+    lignes.sort((x, y) => y.score - x.score || -duel(x, y) || y.diffSets - x.diffSets || y.diffPts - x.diffPts
       || y.ptsP - x.ptsP || x.equipe.nom.localeCompare(y.equipe.nom, 'fr'));
     lignes.forEach((l, i) => { l.rang = i > 0 && egal(l, lignes[i - 1]) ? lignes[i - 1].rang : i + 1; });
     return lignes;
@@ -483,7 +599,7 @@
     if (!t || typeof t !== 'object') return null;
     t.nom = t.nom || 'Tournoi loisir';
     t.reglages = Object.assign({}, REGLAGES_DEFAUT, t.reglages);
-    t.equipes = enTableau(t.equipes).map((e) => ({ id: e.id, nom: e.nom || '', joueurs: e.joueurs || '' }));
+    t.equipes = enTableau(t.equipes).map((e) => Object.assign({}, e, { nom: e.nom || '', joueurs: e.joueurs || '' }));
     t.matchs = enTableau(t.matchs).map((m) => Object.assign({ terrain: null, debut: null, fin: null }, m, {
       sets: enTableau(m.sets).map((paire) => enTableau(paire).map(Number)),
     }));
@@ -517,6 +633,38 @@
     + '<path d="M16.5 27 H47.5" stroke="#0a3d2b" stroke-width="2.4" opacity=".4"/>'
     + '<path d="M21 46 H43 A11 11 0 0 1 21 46 Z" fill="#f4c430"/></g></svg>';
 
+  // Petit signal sonore (deux notes). Le navigateur ne l'autorise qu'après un premier geste
+  // sur la page : activerSon() est à appeler dans un clic.
+  let contexteAudio = null;
+  function activerSon() {
+    try {
+      const Contexte = global.AudioContext || global.webkitAudioContext;
+      if (!Contexte) return false;
+      contexteAudio = contexteAudio || new Contexte();
+      if (contexteAudio.state === 'suspended') contexteAudio.resume();
+      return true;
+    } catch (e) { return false; }
+  }
+  function sonActif() {
+    return !!contexteAudio && contexteAudio.state === 'running';
+  }
+  function bip() {
+    if (!sonActif()) return;
+    const t0 = contexteAudio.currentTime;
+    [[880, 0], [1175, 0.2], [1568, 0.4]].forEach(([frequence, decalage]) => {
+      const osc = contexteAudio.createOscillator();
+      const gain = contexteAudio.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = frequence;
+      gain.gain.setValueAtTime(0.0001, t0 + decalage);
+      gain.gain.exponentialRampToValueAtTime(0.35, t0 + decalage + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + decalage + 0.45);
+      osc.connect(gain).connect(contexteAudio.destination);
+      osc.start(t0 + decalage);
+      osc.stop(t0 + decalage + 0.5);
+    });
+  }
+
   function idDansAdresse() {
     return new URLSearchParams(global.location.search).get('t');
   }
@@ -527,9 +675,11 @@
     nouveauTournoi, ajusterEquipes, equipe, nomEquipe, statut, texteFormat,
     verifierFormat, paires, ordonner, genererMatchs,
     matchsEnCours, matchsEnAttente, terrainsLibres, remplirTerrains, lancer, demarre, prochains, reporter,
+    planifier, dureeMatch, finEstimee, prioriser,
     resultat, texteScore, verifierSet, verifierScore, enregistrerScore,
+    setsForfait, enregistrerForfait, abandonEquipe, annulerAbandon,
     classement, nulsPossibles, podiumHtml, signe,
     lireSaisie, memesSets, enTableau, normaliser,
-    urlPage, qrSvg, heure, idDansAdresse, ICONE,
+    urlPage, qrSvg, heure, idDansAdresse, ICONE, activerSon, sonActif, bip,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

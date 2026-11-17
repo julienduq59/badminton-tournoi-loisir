@@ -15,8 +15,17 @@ commandes, commits et textes du site.
   calendrier (`paires`, `ordonner`, `genererMatchs`), appel des matchs (`choisir`,
   `remplirTerrains`, `prochains`), scores (`verifierScore`, `enregistrerScore`, `lireSaisie`),
   classement (`classement`) et remise en forme des données lues en ligne (`normaliser`).
-- `prochains()` simule l'appel automatique avec la même règle que `remplirTerrains()` :
-  l'ordre affiché « à suivre » doit rester identique à l'ordre réel des appels.
+- `prochains()` / `planifier()` simulent l'appel automatique avec la même règle que
+  `remplirTerrains()` : l'ordre affiché « à suivre » doit rester identique à l'ordre réel des appels.
+  Règle d'appel (`choisir`) : match prioritaire, puis équipes qui ne sortent pas du terrain, puis
+  équipes qui ont le moins joué, puis ordre de la file.
+- Heures estimées : `dureeMatch()` (médiane des 12 derniers matchs, sinon la durée maximum réglée),
+  `planifier(t, durée)` et `finEstimee()`. Rien n'est affiché tant qu'aucune durée n'est connue.
+- Forfaits : `enregistrerForfait()` (un match, champ `forfait` = équipe perdante) et
+  `abandonEquipe()` / `annulerAbandon()` (champ `abandon` sur l'équipe). Un forfait seul ne lance
+  pas le tournoi (`demarre()`).
+- Classement : victoires, puis confrontation directe si exactement deux équipes sont à égalité,
+  puis différence de sets, puis différence de points.
 - `assets/donnees.js` (`BT.Donnees`) cache le stockage : mode local (localStorage) quand
   `assets/config.js` vaut null, mode en ligne (Firebase Realtime Database, SDK compat chargé
   depuis gstatic) quand la configuration est remplie. Toute modification du tournoi passe par

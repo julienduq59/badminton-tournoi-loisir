@@ -13,7 +13,10 @@ Adresse du site : https://julienduq59.github.io/badminton-tournoi-loisir/
 - Écran d'affichage pour la salle (télé ou vidéoprojecteur) : matchs en cours sur chaque terrain, prochain match, matchs suivants, QR code, puis podium et classement final.
 - Page des équipes, ouverte avec le QR code : prochain match et numéro du terrain, envoi du score, matchs joués avec les scores, matchs restants, classement.
 - Plusieurs organisateurs : le lien organisateur (onglet QR code) permet de gérer le tournoi depuis un autre téléphone.
-- Classement au nombre de victoires, puis à la différence de sets, puis à la différence de points.
+- Classement au nombre de victoires. Entre deux équipes à égalité, leur match les départage, puis la différence de sets, puis la différence de points. Impression et téléchargement (Excel) du classement et de tous les matchs.
+- Pendant le tournoi : temps écoulé ou restant sur chaque terrain (durée maximum d'un match en option), heure de fin estimée, heure de passage estimée pour chaque équipe, match mis en priorité, forfait sur un match, abandon d'une équipe, filtre des matchs par équipe.
+- Alertes : l'écran de la salle met en avant chaque nouveau match appelé et peut sonner ; le téléphone d'un joueur sonne et vibre quand le match de son équipe est appelé (page ouverte).
+- « Recommencer » sur l'accueil crée un nouveau tournoi avec les mêmes équipes et réglages. Le site peut s'ajouter à l'écran d'accueil du téléphone.
 
 ## Base en ligne (Firebase)
 
@@ -30,7 +33,7 @@ Les valeurs de configuration ne sont pas secrètes. La sécurité vient des règ
 
 - `index.html` : liste des tournois et création
 - `tournoi.html` : gestion du tournoi (terrains, scores envoyés, matchs, classement, réglages, QR code)
-- `ecran.html` : écran d'affichage pour la salle (`?vue=terrains` ou `?vue=suite` pour n'afficher qu'une partie)
+- `ecran.html` : écran d'affichage pour la salle (`?vue=terrains`, `?vue=suite` ou `?vue=classement` pour n'afficher qu'une partie)
 - `equipe.html` : page des équipes ouverte avec le QR code
 - `assets/commun.js` : logique commune (calendrier, appel des matchs, scores, classement)
 - `assets/donnees.js` : stockage, dans le navigateur ou dans la base Firebase

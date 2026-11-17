@@ -24,6 +24,7 @@
         <span class="actions">
           <a class="bouton petit principal" href="tournoi.html?t=${esc(x.id)}">Ouvrir</a>
           <a class="bouton petit" href="ecran.html?t=${esc(x.id)}" target="_blank" rel="noopener">Écran</a>
+          <button class="bouton petit" type="button" data-recommencer="${esc(x.id)}">Recommencer</button>
           <button class="bouton petit danger" type="button" data-supprimer="${esc(x.id)}">Supprimer</button>
         </span>
       </li>`).join('');
@@ -47,7 +48,31 @@
     }
   });
 
+  // Nouveau tournoi avec les mêmes équipes et les mêmes réglages (scores remis à zéro).
+  async function recommencer(id, bouton) {
+    const source = D.lireCopie(id);
+    if (!source) {
+      alert('Ouvre d’abord ce tournoi une fois sur cet appareil, puis réessaie.');
+      return;
+    }
+    if (!confirm('Créer un nouveau tournoi avec les mêmes équipes et les mêmes réglages que « ' + source.nom + ' » ? L’ancien tournoi reste dans la liste.')) return;
+    bouton.disabled = true;
+    try {
+      const t = BT.nouveauTournoi();
+      t.nom = source.nom;
+      t.reglages = Object.assign({}, source.reglages);
+      t.equipes = source.equipes.map((e) => ({ id: 'e' + BT.uid(6), nom: e.nom, joueurs: e.joueurs || '' }));
+      await D.creer(t);
+      location.href = 'tournoi.html?t=' + encodeURIComponent(t.id) + '#reglages';
+    } catch (err) {
+      bouton.disabled = false;
+      alert('Création impossible. ' + (err && err.message ? err.message : ''));
+    }
+  }
+
   document.getElementById('liste').addEventListener('click', async (e) => {
+    const relance = e.target.closest('[data-recommencer]');
+    if (relance) { recommencer(relance.dataset.recommencer, relance); return; }
     const bouton = e.target.closest('[data-supprimer]');
     if (!bouton) return;
     const id = bouton.dataset.supprimer;

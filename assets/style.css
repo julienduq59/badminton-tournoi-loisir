@@ -736,18 +736,19 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .e-classement .rang { color: var(--jaune); font-variant-numeric: tabular-nums; }
 .e-classement .bilan-e { color: rgba(255, 255, 255, .7); font-variant-numeric: tabular-nums; font-size: .85em; }
 
-.e-plein-ecran {
+.e-commandes {
   position: fixed;
   right: 16px;
   bottom: 16px;
   z-index: 10;
+  display: flex;
+  gap: 8px;
   opacity: 0;
   transition: opacity .3s;
-  background: rgba(255, 255, 255, .12);
-  color: #fff;
-  border-color: rgba(255, 255, 255, .3);
 }
-.page-ecran.souris .e-plein-ecran { opacity: 1; }
+.e-commandes .bouton { background: rgba(255, 255, 255, .12); color: #fff; border-color: rgba(255, 255, 255, .3); }
+.e-commandes .bouton[aria-pressed="true"] { background: var(--jaune); color: var(--vert-900); border-color: var(--jaune); }
+.page-ecran.souris .e-commandes, .page-ecran.son-a-activer .e-commandes { opacity: 1; }
 .page-ecran:not(.souris) { cursor: none; }
 
 /* ---------- Connexion, notifications ---------- */
@@ -863,6 +864,110 @@ details > summary.bouton::-webkit-details-marker { display: none; }
   .court-cote { font-size: 1.15rem; }
   .match-etat.propositions { grid-column: 1 / -1; align-items: flex-start; }
   .proposition { justify-content: flex-start; }
+}
+
+/* ---------- Chronos, priorité, forfaits ---------- */
+
+.chrono { font-weight: 650; color: var(--vert-700); }
+.chrono--alerte { color: var(--rouge); font-weight: 800; }
+.joueurs-court { display: block; margin-top: 2px; font-size: .72em; font-weight: 600; opacity: .85; }
+.progression-texte small { display: block; font-weight: 600; font-size: .82rem; color: var(--encre-douce); text-align: right; }
+.etiquette--priorite { background: var(--vert-800); border-color: var(--vert-800); color: #fff; }
+.filtres select {
+  margin-left: auto;
+  min-height: 34px;
+  padding: 4px 10px;
+  border: 1px solid var(--bord);
+  border-radius: 999px;
+  background: var(--carte);
+  font-weight: 600;
+  font-size: .9rem;
+}
+.titre-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 28px 0 12px; }
+.titre-actions h2 { margin: 0; }
+.ligne-equipe--action { grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1.3fr) 150px; }
+.ligne-equipe--action .bouton { justify-self: stretch; }
+.ligne-equipe--abandon input { text-decoration: line-through; color: var(--encre-douce); }
+#r-equipes-erreur { display: block; margin-bottom: 10px; }
+.score-forfait {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--bord);
+  font-size: .9rem;
+  color: var(--encre-douce);
+}
+.score-forfait span { margin-right: auto; }
+
+/* ---------- Écran : appels, chronos, classement ---------- */
+
+.ecran-progres small { display: block; font-size: .62em; font-weight: 650; color: rgba(255, 255, 255, .6); text-align: right; }
+.e-chrono { color: rgba(255, 255, 255, .85); }
+.e-chrono--alerte { color: #ff8a80; font-weight: 800; }
+.e-appel {
+  display: inline-block;
+  margin-right: .6em;
+  padding: .1em .55em;
+  border-radius: 999px;
+  background: var(--jaune);
+  color: var(--vert-900);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  animation: battement 1.2s ease-in-out infinite;
+}
+.e-terrain--appel { border-color: var(--jaune); box-shadow: 0 0 0 .25vw var(--jaune), 0 0 2.4vw rgba(244, 196, 48, .45); }
+.e-court-cote small { display: block; margin-top: .25em; font-size: .42em; font-weight: 650; opacity: .85; }
+.e-vers { display: block; font-size: .55em; color: rgba(255, 255, 255, .6); font-weight: 650; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.e-terrain-match { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.e-terrain-pied {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1vw;
+  margin-top: 1vh;
+  font-size: clamp(.8rem, 4.5cqh, 1.5rem);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.ecran--classement { grid-template-columns: minmax(0, 1fr); }
+.e-vue-classement { grid-column: 1 / -1; min-height: 0; overflow: hidden; }
+.e-classement--colonnes { grid-template-columns: 1fr 1fr; column-gap: 2vw; grid-auto-flow: column; grid-template-rows: repeat(var(--lignes, 8), auto); }
+.e-cl-nom { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- Page des équipes : alerte et terrains ---------- */
+
+.prochain-terrain small { font-size: .7em; font-weight: 600; color: var(--encre-douce); }
+.alerte-appel { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--bord); }
+.alerte-appel p { margin: 0 0 8px; font-size: .92rem; }
+.alerte-appel .note { margin: 8px 0 0; }
+.alerte-appel--on p { color: var(--vert-700); font-weight: 650; }
+.liste-terrains { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.liste-terrains li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: var(--rayon-petit);
+  background: var(--carte);
+  border: 1px solid var(--bord);
+  font-weight: 600;
+  font-size: .94rem;
+}
+.liste-terrains li.moi { border-color: var(--jaune); background: #fffcf0; }
+.liste-terrains .t-num { padding: 2px 8px; border-radius: 6px; background: var(--vert-800); color: #fff; font-size: .8rem; font-weight: 700; white-space: nowrap; }
+.liste-terrains .contre { color: var(--encre-douce); font-weight: 400; }
+
+@media (max-width: 720px) {
+  .ligne-equipe--action { grid-template-columns: 34px minmax(0, 1fr); }
+  .ligne-equipe--action .bouton { grid-column: 2; justify-self: start; }
+  .filtres select { margin-left: 0; width: 100%; }
+  .match-etat { max-width: 48vw; }
+  .score-forfait span { width: 100%; }
 }
 
 /* ---------- Petits écrans ---------- */

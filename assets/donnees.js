@@ -345,6 +345,8 @@
 
   const Donnees = Object.assign({}, CONFIG ? enLigne : local, {
     mesTournois: () => registre.liste(),
+    // Dernière version connue du tournoi sur cet appareil (copie gardée à chaque mise à jour).
+    lireCopie: (id) => BT.normaliser(lireJSON(cleTournoi(id))),
     cleOrganisateur: (id) => (registre.trouver(id) || {}).cle || null,
   });
 

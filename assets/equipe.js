@@ -14,6 +14,38 @@
   let propositions = {};
   let equipeId = params.get('e') || lireChoix();
 
+  // Alerte quand le match de l'équipe est appelé (page ouverte).
+  const cleAlerte = 'badminton:alerte:' + id;
+  let dernierAppel; // match en cours de l'équipe lors de la dernière mise à jour
+
+  function alerteVoulue() {
+    try { return localStorage.getItem(cleAlerte) === 'oui'; } catch (e) { return false; }
+  }
+  function choisirAlerte(oui) {
+    try { localStorage.setItem(cleAlerte, oui ? 'oui' : 'non'); } catch (e) { /* stockage indisponible */ }
+  }
+
+  function blocAlerte() {
+    if (alerteVoulue() && BT.sonActif()) {
+      return '<div class="alerte-appel alerte-appel--on"><p>Alerte activée. Garde cette page ouverte, écran allumé : ton téléphone sonne et vibre quand ton match est appelé.</p>'
+        + '<button type="button" class="bouton petit" data-action="alerte-off">Désactiver l’alerte</button></div>';
+    }
+    return '<div class="alerte-appel"><button type="button" class="bouton principal" data-action="alerte-on">Me prévenir quand mon match est appelé</button>'
+      + (alerteVoulue() ? '<p class="note">Touche le bouton pour réactiver l’alerte après avoir rouvert la page.</p>' : '') + '</div>';
+  }
+
+  function verifierAppel() {
+    if (!t || !equipeId) return;
+    const m = t.matchs.find((x) => x.statut === 'en_cours' && (x.a === equipeId || x.b === equipeId));
+    const actuel = m ? m.id : null;
+    if (dernierAppel !== undefined && actuel && actuel !== dernierAppel && alerteVoulue()) {
+      BT.bip();
+      setTimeout(BT.bip, 1300);
+      if (navigator.vibrate) navigator.vibrate([400, 150, 400, 150, 400]);
+    }
+    dernierAppel = actuel;
+  }
+
   // Formulaire d'envoi du score (conservé quand la page se met à jour).
   let envoi = null; // { matchId, saisie: [[a, b], ...], confirmer, message }
 
@@ -154,7 +186,12 @@
     const moi = lignes.find((l) => l.equipe.id === e.id);
     const nuls = BT.nulsPossibles(t);
     const st = BT.statut(t);
-    const ordre = BT.prochains(t);
+    const plan = BT.planifier(t, BT.dureeMatch(t));
+    const ordre = plan.map((x) => x.m);
+    const heurePrevue = (m) => {
+      const x = plan.find((p) => p.m === m);
+      return x && x.heure ? BT.heure(x.heure) : null;
+    };
     const aJouer = ordre.filter((m) => m.a === e.id || m.b === e.id);
     const enCours = mes.find((m) => m.statut === 'en_cours');
     const joues = mes.filter((m) => m.statut === 'termine').sort((x, y) => (y.fin || 0) - (x.fin || 0));
@@ -162,6 +199,7 @@
 
     let h = '<section class="entete-equipe"><h1>' + esc(e.nom) + '</h1>'
       + (e.joueurs ? '<p class="joueurs">' + esc(e.joueurs) + '</p>' : '')
+      + (e.abandon ? '<p class="joueurs">L’équipe a abandonné, ses matchs restants sont perdus par forfait.</p>' : '')
       + '<div class="bilan">'
       + (moi && moi.J ? '<span>' + rangTexte(moi.rang) + ' sur ' + t.equipes.length + '</span>' : '')
       + '<span>' + pluriel(moi ? moi.V : 0, 'victoire') + '</span>'
@@ -182,10 +220,14 @@
       let attente;
       if (st === 'pret') attente = avant === 0 ? 'Ce sera l’un des premiers matchs du tournoi.' : pluriel(avant, 'match') + ' passeront avant le tien.';
       else attente = avant === 0 ? 'C’est le prochain match appelé.' : pluriel(avant, 'match') + ' seront appelés avant le tien.';
+      const vers = heurePrevue(m);
       h += '<section class="prochain"><div class="prochain-titre">Ton prochain match</div>'
         + '<div class="prochain-adversaire">contre ' + nom(adversaire(m)) + '</div>'
-        + '<p style="margin:0 0 6px">Match ' + m.numero + '. ' + attente + '</p>'
-        + '<p class="note" style="margin:0">Le numéro du terrain s’affiche ici dès que le match est appelé.</p></section>';
+        + (vers ? '<div class="prochain-terrain">Vers ' + vers + '<small> (estimation)</small></div>' : '')
+        + '<p style="margin:4px 0 6px">Match ' + m.numero + '. ' + attente + '</p>'
+        + '<p class="note" style="margin:0">Le numéro du terrain s’affiche ici dès que le match est appelé.</p>'
+        + blocAlerte()
+        + '</section>';
     } else if (mes.length) {
       h += '<section class="prochain"><div class="prochain-titre">Tes matchs</div>'
         + '<div class="prochain-adversaire">Tous tes matchs sont joués</div>'
@@ -199,9 +241,12 @@
     if (aJouer.length > (enCours ? 0 : 1)) {
       const reste = enCours ? aJouer : aJouer.slice(1);
       h += '<h2>Encore à jouer, dans l’ordre prévu</h2><ol class="liste-matchs">'
-        + reste.map((m) => '<li class="match"><span class="match-num" title="Match ' + m.numero + '">' + m.numero + '</span>'
-          + '<span class="match-equipes">contre ' + nom(adversaire(m)) + '</span>'
-          + '<span class="match-etat"><span class="etiquette">À jouer</span></span></li>').join('')
+        + reste.map((m) => {
+          const vers = heurePrevue(m);
+          return '<li class="match"><span class="match-num" title="Match ' + m.numero + '">' + m.numero + '</span>'
+            + '<span class="match-equipes">contre ' + nom(adversaire(m)) + '</span>'
+            + '<span class="match-etat"><span class="etiquette">' + (vers ? 'Vers ' + vers : 'À jouer') + '</span></span></li>';
+        }).join('')
         + '</ol>';
     }
 
@@ -211,11 +256,20 @@
           const r = BT.resultat(m);
           const cote = m.a === e.id ? 'a' : 'b';
           const issue = !r.gagnant ? ['N', 'Nul'] : r.gagnant === cote ? ['V', 'Gagné'] : ['D', 'Perdu'];
+          const score = m.forfait ? (m.forfait === e.id ? 'Forfait' : 'Forfait adverse') : esc(texteSets(versMoi(m.sets, m, e.id)));
           return '<li class="match match--termine"><span class="match-num" title="Match ' + m.numero + '">' + m.numero + '</span>'
             + '<span class="match-equipes">contre ' + nom(adversaire(m)) + '</span>'
-            + '<span class="match-etat"><span class="match-score">' + esc(texteSets(versMoi(m.sets, m, e.id))) + '</span>'
+            + '<span class="match-etat"><span class="match-score">' + score + '</span>'
             + '<span class="etiquette etiquette--' + issue[0] + '">' + issue[1] + '</span></span></li>';
         }).join('')
+        + '</ol>';
+    }
+
+    const surTerrains = BT.matchsEnCours(t);
+    if (surTerrains.length) {
+      h += '<h2>En ce moment sur les terrains</h2><ol class="liste-terrains">'
+        + surTerrains.map((m) => '<li' + (m.a === e.id || m.b === e.id ? ' class="moi"' : '') + '><span class="t-num">Terrain ' + m.terrain + '</span>'
+          + '<span>' + nom(m.a) + ' <span class="contre">contre</span> ' + nom(m.b) + '</span></li>').join('')
         + '</ol>';
     }
 
@@ -242,6 +296,8 @@
     if (equipeId && !t.equipes.some((e) => e.id === equipeId)) equipeId = null;
     if (!equipeId) { choix(); return; }
     retenirChoix(equipeId);
+    const enJeu = t.matchs.find((x) => x.statut === 'en_cours' && (x.a === equipeId || x.b === equipeId));
+    if (enJeu) document.title = 'Terrain ' + enJeu.terrain + ' · ' + BT.nomEquipe(t, equipeId);
 
     // Garde le curseur dans le formulaire de score pendant les mises à jour.
     const actif = document.activeElement;
@@ -275,6 +331,16 @@
       }
       case 'fermer':
         envoi = null;
+        rendre();
+        break;
+      case 'alerte-on':
+        choisirAlerte(true);
+        BT.activerSon();
+        if (navigator.vibrate) navigator.vibrate(200);
+        setTimeout(() => { BT.bip(); rendre(); }, 150);
+        break;
+      case 'alerte-off':
+        choisirAlerte(false);
         rendre();
         break;
       case 'retirer':
@@ -328,6 +394,7 @@
     if (!nouveau && info && info.erreur && t) return;
     t = nouveau;
     charge = true;
+    verifierAppel();
     rendre();
   });
   D.suivrePropositions(id, (p) => {
