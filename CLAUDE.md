@@ -111,6 +111,9 @@ commandes, commits et textes du site.
   l'entrée d'avant est remise en cas d'échec.
 - Écran : 2 rangées de terrains jusqu'à 10, présentation compacte au-delà de 12 ; classement en 2 ou
   3 colonnes avec taille de texte selon le nombre de lignes ; tableau de phase finale réduit pour tenir.
+- Cases de score (téléphone et dialogue organisateur) : `type="text"` + `inputmode="numeric"`,
+  2 chiffres au plus (`chiffresScore`), case rouge et phrase au-delà de `maxPointsSet(reg)` (points sans
+  écart, sinon score maximum), passage à la case suivante après 2 chiffres tapés.
 - `t.pause` suspend l'appel automatique (`appelAutoActif`), `t.annonce` est le message affiché
   sur l'écran et les téléphones.
 - `assets/donnees.js` (`BT.Donnees`) cache le stockage : mode local (localStorage) quand

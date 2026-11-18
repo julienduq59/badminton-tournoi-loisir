@@ -158,6 +158,9 @@
     const reg = BT.formatMatch(t, m);
     const n = reg.sets;
     while (envoi.saisie.length < n) envoi.saisie.push(['', '']);
+    const max = BT.maxPointsSet(reg);
+    const attr = (v) => ' maxlength="2" autocomplete="off" data-max="' + (max || '') + '"'
+      + (max && Number(v) > max ? ' data-trop=""' : '');
     let h = '<form class="envoi-score" id="form-envoi" novalidate>'
       + '<p class="note" style="margin:0 0 4px">' + esc(BT.texteFormat(reg)) + '</p>'
       + '<div class="score-grille">'
@@ -165,10 +168,12 @@
     for (let i = 0; i < n; i++) {
       const [va, vb] = envoi.saisie[i];
       h += '<span class="score-set">Set ' + (i + 1) + '</span>'
-        + '<input type="number" inputmode="numeric" min="0" max="99" data-set="' + i + '" data-cote="0" value="' + esc(va) + '" aria-label="Set ' + (i + 1) + ', ' + esc(e.nom) + '"' + (Number(va) > Number(vb) && vb !== '' ? ' class="gagne"' : '') + '>'
-        + '<input type="number" inputmode="numeric" min="0" max="99" data-set="' + i + '" data-cote="1" value="' + esc(vb) + '" aria-label="Set ' + (i + 1) + ', ' + nom(adversaire) + '"' + (Number(vb) > Number(va) && va !== '' ? ' class="gagne"' : '') + '>';
+        + '<input type="text" inputmode="numeric" pattern="[0-9]*"' + attr(va) + ' data-set="' + i + '" data-cote="0" value="' + esc(va) + '" aria-label="Set ' + (i + 1) + ', ' + esc(e.nom) + '"' + (Number(va) > Number(vb) && vb !== '' ? ' class="gagne"' : '') + '>'
+        + '<input type="text" inputmode="numeric" pattern="[0-9]*"' + attr(vb) + ' data-set="' + i + '" data-cote="1" value="' + esc(vb) + '" aria-label="Set ' + (i + 1) + ', ' + nom(adversaire) + '"' + (Number(vb) > Number(va) && va !== '' ? ' class="gagne"' : '') + '>';
     }
-    h += '</div>';
+    h += '</div>'
+      + '<p class="score-max" id="envoi-max"' + (max && envoi.saisie.some((x) => Number(x[0]) > max || Number(x[1]) > max) ? '' : ' hidden') + '>'
+      + (max ? 'Le score maximum d’un set est ' + max + ' points.' : '') + '</p>';
     if (envoi.message) {
       h += '<div class="score-message score-message--' + envoi.message.type + '">' + esc(envoi.message.texte)
         + (envoi.message.liste ? '<ul>' + envoi.message.liste.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '') + '</div>';
@@ -785,6 +790,13 @@
   contenu.addEventListener('input', (e) => {
     const champ = e.target;
     if (!envoi || champ.dataset.set === undefined) return;
+    // 2 chiffres au plus ; au-delà du score maximum du set, la case passe en rouge.
+    const propre = BT.chiffresScore(champ.value);
+    if (propre !== champ.value) champ.value = propre;
+    const max = Number(champ.dataset.max) || 0;
+    champ.toggleAttribute('data-trop', !!max && Number(propre) > max);
+    const aideMax = contenu.querySelector('#envoi-max');
+    if (aideMax) aideMax.hidden = !contenu.querySelector('#form-envoi input[data-trop]');
     const i = Number(champ.dataset.set);
     while (envoi.saisie.length <= i) envoi.saisie.push(['', '']);
     envoi.saisie[i][Number(champ.dataset.cote)] = champ.value;
@@ -801,6 +813,12 @@
     if (paire.length === 2) {
       paire[0].classList.toggle('gagne', a > b);
       paire[1].classList.toggle('gagne', b > a);
+    }
+    // Deux chiffres tapés : on passe à la case suivante.
+    if (propre.length === 2 && e.inputType && e.inputType.indexOf('insert') === 0) {
+      const cases = Array.from(contenu.querySelectorAll('#form-envoi input[data-set]'));
+      const suivante = cases[cases.indexOf(champ) + 1];
+      if (suivante) { suivante.focus(); suivante.select(); }
     }
   });
 

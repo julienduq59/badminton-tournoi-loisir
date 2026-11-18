@@ -888,6 +888,15 @@
     return 'il faut 2 points d’écart';
   }
 
+  // Score le plus haut possible dans un set (null : pas de limite, avec 2 points d'écart sans maximum).
+  function maxPointsSet(reg) {
+    if (!reg.ecart2) return reg.points;
+    return reg.plafond > reg.points ? reg.plafond : null;
+  }
+
+  // Case de score : chiffres seulement, 2 au plus.
+  const chiffresScore = (v) => String(v == null ? '' : v).replace(/\D/g, '').slice(0, 2);
+
   // sets : tableau de [scoreA, scoreB] déjà convertis en nombres.
   function verifierScore(sets, reg) {
     const alertes = [];
@@ -1821,7 +1830,7 @@
     etiquetteMatch, formatMatch, classementPoules, classementFinal, tableauHtml,
     setsPour, placeEquipe, statsEquipe, statsTournoi,
     classement, nulsPossibles, podiumHtml, signe,
-    lireSaisie, memesSets, enTableau, normaliser, suiteCommencee, nulsReglages, reglesTournoi, reglesHtml, empreinteRegles, chiffrerCle, dechiffrerCle, listeAcces, ouvrirAcces, poserAcces, retirerAcces,
+    lireSaisie, memesSets, enTableau, normaliser, maxPointsSet, chiffresScore, suiteCommencee, nulsReglages, reglesTournoi, reglesHtml, empreinteRegles, chiffrerCle, dechiffrerCle, listeAcces, ouvrirAcces, poserAcces, retirerAcces,
     urlPage, qrSvg, heure, idDansAdresse, ICONE, activerSon, sonActif, bip,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

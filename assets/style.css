@@ -491,6 +491,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .score-grille input:focus { border-color: var(--vert-500); outline: 2px solid var(--vert-100); }
 .score-grille input.gagne { background: var(--vert-50); border-color: var(--vert-500); }
+.score-grille input[data-trop] { background: var(--rouge-clair); border-color: var(--rouge); color: var(--rouge); }
+.score-max { margin: 2px 0 0; color: var(--rouge); font-size: .88rem; font-weight: 650; }
 .score-message { margin: 12px 0 0; padding: 10px 12px; border-radius: 8px; font-size: .92rem; }
 .score-message ul { margin: 4px 0 0; padding-left: 18px; }
 .score-message--erreur { background: var(--rouge-clair); color: var(--rouge); }

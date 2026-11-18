@@ -1335,13 +1335,16 @@
     $('#score-recus').innerHTML = recus.map((p, i) => '<div class="score-recu"><span>Score envoyé par ' + nom(p.equipeId) + ' : <strong>' + esc(texteSets(p.sets)) + '</strong></span>'
       + '<button type="button" class="bouton petit" data-reprendre="' + i + '">Reprendre</button></div>').join('');
     $('#score-recus').hidden = !recus.length;
+    const max = BT.maxPointsSet(reg);
+    const attr = ' inputmode="numeric" pattern="[0-9]*" maxlength="2" autocomplete="off" data-max="' + (max || '') + '"';
     let h = '<span></span><span class="score-equipe">' + nom(m.a) + '</span><span class="score-equipe">' + nom(m.b) + '</span>';
     for (let i = 0; i < n; i++) {
       h += '<span class="score-set">Set ' + (i + 1) + '</span>'
-        + '<input type="number" inputmode="numeric" min="0" max="99" aria-label="Set ' + (i + 1) + ', ' + nom(m.a) + '">'
-        + '<input type="number" inputmode="numeric" min="0" max="99" aria-label="Set ' + (i + 1) + ', ' + nom(m.b) + '">';
+        + '<input type="text"' + attr + ' aria-label="Set ' + (i + 1) + ', ' + nom(m.a) + '">'
+        + '<input type="text"' + attr + ' aria-label="Set ' + (i + 1) + ', ' + nom(m.b) + '">';
     }
     $('#score-grille').innerHTML = h;
+    $('#score-max').textContent = max ? 'Le score maximum d’un set est ' + max + ' points.' : '';
     remplirChamps(m.forfait ? [] : depart);
     $('#score-forfait').innerHTML = '<span>Forfait d’une équipe ? Touche son nom.</span>'
       + '<button type="button" class="bouton petit danger" data-forfait="' + esc(m.a) + '">' + nom(m.a) + '</button>'
@@ -1362,6 +1365,12 @@
       champs[i].classList.toggle('gagne', a > b);
       champs[i + 1].classList.toggle('gagne', b > a);
     }
+    // Au-delà du score maximum du set, la case passe en rouge.
+    champs.forEach((c) => {
+      const max = Number(c.dataset.max) || 0;
+      c.toggleAttribute('data-trop', !!max && Number(c.value) > max);
+    });
+    $('#score-max').hidden = !document.querySelector('#score-grille input[data-trop]');
   }
 
   function lireDialogue() {
@@ -1371,7 +1380,16 @@
     return BT.lireSaisie(paires);
   }
 
-  $('#score-grille').addEventListener('input', () => {
+  $('#score-grille').addEventListener('input', (e) => {
+    // 2 chiffres au plus ; deux chiffres tapés, on passe à la case suivante.
+    const champ = e.target;
+    const propre = BT.chiffresScore(champ.value);
+    if (propre !== champ.value) champ.value = propre;
+    if (propre.length === 2 && e.inputType && e.inputType.indexOf('insert') === 0) {
+      const cases = Array.from(document.querySelectorAll('#score-grille input'));
+      const suivante = cases[cases.indexOf(champ) + 1];
+      if (suivante) { suivante.focus(); suivante.select(); }
+    }
     colorerSets();
     if (confirmer) {
       confirmer = false;
