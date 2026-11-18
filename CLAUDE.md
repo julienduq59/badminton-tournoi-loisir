@@ -116,6 +116,20 @@ commandes, commits et textes du site.
   écart, sinon score maximum), passage à la case suivante après 2 chiffres tapés.
 - `t.pause` suspend l'appel automatique (`appelAutoActif`), `t.annonce` est le message affiché
   sur l'écran et les téléphones.
+- Pointage à l'arrivée (`reglages.pointage`, désactivé par défaut) : une équipe ne joue qu'une fois
+  pointée (`equipe.arrivee` = heure d'arrivée, `pointer` / `annulerPointage`, `estArrivee`,
+  `equipesAttendues`). `matchsAppelables(t)` remplace `matchsEnAttente(t)` dans `remplirTerrains`,
+  `planifier` et `attenteRepos` : les matchs d'une équipe pas pointée (`matchsEnAttenteArrivee`) n'ont
+  ni numéro ni heure prévus ; dès son pointage, ses matchs reviennent dans la file (elle a moins joué,
+  donc passe vite). `lancer` (« Jouer » à la main) et `enregistrerScore` pointent les deux équipes ;
+  activer le pointage en cours de tournoi pointe les équipes qui ont déjà joué (`pointerEquipesVenues`).
+  `finEstimee` ajoute les matchs en attente d'arrivée à la fin ; `dureeEstimee` suppose tout le monde là.
+  Téléphone : carte « Ton équipe n'est pas encore pointée » et bouton « On est arrivés »
+  (`Donnees.signalerArrivee` : en local et sur un appareil organisateur, pointage direct ; sinon dépôt
+  dans `arrivees/<équipe>`, que la page de gestion reporte dans le tournoi puis efface,
+  `traiterArrivees`). Table de marque : carte « Arrivée des équipes » (onglet Terrains), « Pointer » /
+  « Annuler » ; onglet Matchs, groupe « En attente de l'arrivée d'une équipe ». Écran : équipes pas
+  encore arrivées et QR code « Scanne pour pointer ton équipe ».
 - Photos (`reglages.photos`, actives sauf `false` ; `reglages.photosMax` par personne, 0 = sans limite) :
   album du tournoi (onglet « Photos » des téléphones, `#photos`) et photo de chaque équipe (en tête de sa
   page, sur l'écran à côté de son nom et sur le récap). Tout le monde ajoute et voit les photos ; chacun
@@ -141,7 +155,8 @@ commandes, commits et textes du site.
   depuis gstatic) quand la configuration est remplie. Toute modification du tournoi passe par
   `Donnees.modifier(id, fn)` (transaction en ligne) : `fn` reçoit la version la plus récente.
 - Données en ligne : `tournois/<id>/donnees` (le tournoi), `tournois/<id>/propositions/<match>/<équipe>`
-  (scores envoyés par les joueurs, rangés dans l'ordre du match), `tournois/<id>/admins/<uid>`.
+  (scores envoyés par les joueurs, rangés dans l'ordre du match), `tournois/<id>/arrivees/<équipe>`
+  (arrivées signalées par les téléphones, en attente de la page de gestion), `tournois/<id>/admins/<uid>`.
   Un appareil devient organisateur en prouvant la clé du tournoi (`cles/<id>`, illisible) via
   `preuves/<id>/<uid>` ; la clé circule dans le lien organisateur `tournoi.html?t=<id>#cle=<clé>`.
   Connexion anonyme Firebase pour tous les appareils qui écrivent.
@@ -149,6 +164,8 @@ commandes, commits et textes du site.
   Photos : ajout par tout appareil connecté si le tournoi existe et que `reglages/photos` n'est pas
   `false`, au nom de son propre `uid`, JPEG seulement et taille plafonnée ; retrait par son auteur ou un
   organisateur (écriture des organisateurs au niveau `miniatures`, `photos`, `equipesPhotos`).
+  Arrivées : création ou mise à jour par tout appareil connecté (au nom de son `uid`, date numérique,
+  tournoi existant), effacement par les organisateurs seulement.
 - Base en ligne active depuis le 17/11/2026 : projet Firebase `badminton-tournoi-b3ae1` (compte Google
   de Julien, offre gratuite Spark, limite de 100 appareils connectés en même temps), Realtime Database
   en Belgique (`europe-west1`), connexion anonyme activée avec nettoyage automatique à 30 jours.
@@ -165,6 +182,8 @@ commandes, commits et textes du site.
   saisies simultanées, refus des écritures d'un joueur. Photos : un joueur ne retire ni ne remplace
   celles des autres, un organisateur retire tout, ajouts refusés quand les photos sont désactivées ou
   trop lourdes ; images de test dessinées dans le navigateur (canvas) puis données à `setInputFiles`.
+  Pointage : arrivée par le téléphone d'un joueur reportée par la table de marque, aucun match appelé
+  avec une équipe pas pointée (test aléatoire avec arrivées échelonnées), droits sur `arrivees`.
 
 ## Conventions
 

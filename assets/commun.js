@@ -32,6 +32,7 @@
     heureFin: '',             // heure à laquelle il faut rendre la salle (HH:MM)
     reglesPerso: '',          // règles ajoutées par les organisateurs, affichées avec les règles du tournoi
     photos: true,             // album photo du tournoi et photos d'équipe
+    pointage: false,          // pointage à l'arrivée : une équipe ne joue qu'une fois arrivée
     photosMax: 0,             // photos de l'album par personne (0 = sans limite)
     // Déroulement : une seule poule (championnat) ou plusieurs poules, puis phase finale éventuelle.
     format: 'championnat',
@@ -456,6 +457,65 @@
     return libres;
   }
 
+  /* ---------- Pointage des équipes à l'arrivée ----------
+     Avec le pointage, une équipe ne joue qu'une fois arrivée : elle le signale sur son téléphone,
+     ou l'organisation la pointe à la table de marque (champ « arrivee » de l'équipe, heure d'arrivée).
+     D'ici là, ses matchs ne sont pas appelés et n'ont ni numéro ni heure prévus. */
+
+  function pointageActif(t) {
+    return !!(t.reglages && t.reglages.pointage);
+  }
+
+  // L'équipe peut-elle être appelée ? (toujours sans pointage ; une équipe inconnue ne bloque rien)
+  function estArrivee(t, equipeId) {
+    if (!pointageActif(t)) return true;
+    const e = t.equipes.find((x) => x.id === equipeId);
+    return !e || !!e.arrivee;
+  }
+
+  function matchPointe(t, m) {
+    return estArrivee(t, m.a) && estArrivee(t, m.b);
+  }
+
+  // Équipes attendues (pas encore arrivées, sans compter celles qui ont abandonné).
+  function equipesAttendues(t) {
+    return pointageActif(t) ? t.equipes.filter((e) => !e.arrivee && !e.abandon) : [];
+  }
+
+  function pointer(t, equipeId, quand) {
+    const e = t.equipes.find((x) => x.id === equipeId);
+    if (!e || e.arrivee) return false;
+    e.arrivee = quand || Date.now();
+    return true;
+  }
+
+  function annulerPointage(t, equipeId) {
+    const e = t.equipes.find((x) => x.id === equipeId);
+    if (!e || !e.arrivee) return false;
+    delete e.arrivee;
+    return true;
+  }
+
+  // Une équipe qui a joué (ou joue) est forcément arrivée : utile quand le pointage est activé en cours de tournoi.
+  function pointerEquipesVenues(t) {
+    t.matchs.forEach((m) => {
+      if (m.statut === 'en_cours' || (m.statut === 'termine' && !m.forfait)) {
+        pointer(t, m.a, m.debut || m.fin || Date.now());
+        pointer(t, m.b, m.debut || m.fin || Date.now());
+      }
+    });
+  }
+
+  // Matchs en attente qui peuvent être appelés : les deux équipes sont arrivées.
+  function matchsAppelables(t) {
+    return matchsEnAttente(t).filter((m) => matchPointe(t, m));
+  }
+
+  // Matchs en attente bloqués par une équipe pas encore arrivée.
+  function matchsEnAttenteArrivee(t) {
+    return pointageActif(t) ? matchsEnAttente(t).filter((m) => !matchPointe(t, m)) : [];
+  }
+
   // Choisit le prochain match parmi ceux dont les deux équipes sont libres :
   // d'abord les matchs mis en priorité par un organisateur, puis ceux où aucune
   // équipe ne sort du terrain, puis les équipes qui ont le moins joué, puis l'ordre de la file.
@@ -526,7 +586,7 @@
   function numerosPrevus(t) {
     const r = t.reglages;
     const empreinte = [r.terrains, terrainsFermes(t).join('.'), r.reposMin, r.dureePrevue, r.dureeLimite, r.sets, r.points, r.heureDebut,
-      r.reposMin ? Math.floor(Date.now() / 15000) : '']
+      r.reposMin ? Math.floor(Date.now() / 15000) : '', r.pointage ? t.equipes.map((e) => (e.arrivee ? 1 : 0)).join('') : '']
       .join('|') + '|' + t.matchs.map((m) => m.id + m.statut + (m.numero || '') + m.ordre + (m.priorite ? 'p' : '') + (m.reporte ? 'r' : '') + (m.debut || '') + '-' + (m.fin || '')).join(',');
     let entree = cacheNumeros.get(t);
     if (!entree || entree.empreinte !== empreinte) {
@@ -558,6 +618,11 @@
     m.fin = null;
     delete m.priorite;
     delete m.reporte;
+    // Un match lancé à la main avec une équipe pas pointée : elle est là, elle est pointée.
+    if (pointageActif(t)) {
+      pointer(t, m.a, m.debut);
+      pointer(t, m.b, m.debut);
+    }
   }
 
   /* ---------- Repos minimum entre deux matchs d'une équipe ---------- */
@@ -586,7 +651,7 @@
     matchsEnCours(t).forEach((m) => { occupees.add(m.a); occupees.add(m.b); });
     const fins = finsParEquipe(t);
     let min = null;
-    matchsEnAttente(t).forEach((m) => {
+    matchsAppelables(t).forEach((m) => {
       if (m.reporte || occupees.has(m.a) || occupees.has(m.b)) return;
       const pret = Math.max(fins.get(m.a) || 0, fins.get(m.b) || 0) + R;
       const reste = Math.max(0, pret - maintenant);
@@ -601,7 +666,7 @@
     eviter = eviter || sortiesDuTerrain(t);
     const occupees = new Set();
     matchsEnCours(t).forEach((m) => { occupees.add(m.a); occupees.add(m.b); });
-    const attente = matchsEnAttente(t).filter((m) => !exclus || !exclus.has(m.id));
+    const attente = matchsAppelables(t).filter((m) => !exclus || !exclus.has(m.id));
     const joues = compterJoues(t);
     const R = ignorerRepos ? 0 : reposMs(t);
     const fins = R ? finsParEquipe(t) : null;
@@ -650,7 +715,8 @@
       .sort((x, y) => (x.debut || 0) - (y.debut || 0))
       .map((m) => ({ m, fin: Math.max(maintenant, (m.debut || maintenant) + D), compte: !fermes.has(m.terrain) && m.terrain <= t.reglages.terrains }));
     let places = enJeu.filter((x) => x.compte).length;
-    const attente = matchsEnAttente(t);
+    // Les matchs d'une équipe pas encore arrivée ne sont pas prévus : on ne sait pas quand elle viendra.
+    const attente = matchsAppelables(t);
     const occupees = new Set();
     enJeu.forEach(({ m }) => { occupees.add(m.a); occupees.add(m.b); });
     const joues = compterJoues(t);
@@ -777,7 +843,7 @@
   function dureeEstimee(t, D) {
     if (!D || !t.matchs.length) return null;
     const base = Date.UTC(2000, 0, 3, 8);
-    const copie = Object.assign({}, t, { reglages: Object.assign({}, t.reglages, { heureDebut: '' }) });
+    const copie = Object.assign({}, t, { reglages: Object.assign({}, t.reglages, { heureDebut: '', pointage: false }) });
     let fin = base;
     planifier(copie, D, base).forEach((x) => { if (x.heure) fin = Math.max(fin, x.heure + D); });
     const T = Math.max(1, nbTerrainsOuverts(t));
@@ -802,6 +868,13 @@
     t.matchs.forEach((m) => { if (m.statut === 'en_cours') fin = Math.max(fin, (m.debut || maintenant) + D); });
     planifier(t, D, maintenant).forEach((x) => { if (x.heure) fin = Math.max(fin, x.heure + D); });
     const T = Math.max(1, nbTerrainsOuverts(t));
+    // Matchs des équipes pas encore arrivées : joués après, une équipe ne jouant qu'un match à la fois.
+    const bloques = matchsEnAttenteArrivee(t);
+    if (bloques.length) {
+      const parEquipe = new Map();
+      bloques.forEach((m) => [m.a, m.b].forEach((e) => { if (!estArrivee(t, e)) parEquipe.set(e, (parEquipe.get(e) || 0) + 1); }));
+      fin += Math.max(Math.ceil(bloques.length / T), ...parEquipe.values()) * D;
+    }
     const DF = dureeFinale(t, D);
     toursFinaleRestants(t).forEach((n) => { fin += Math.ceil(n / T) * DF; });
     return fin;
@@ -926,6 +999,10 @@
 
   function enregistrerScore(t, m, sets) {
     const etaitEnCours = m.statut === 'en_cours';
+    if (pointageActif(t)) {
+      pointer(t, m.a, m.debut || Date.now());
+      pointer(t, m.b, m.debut || Date.now());
+    }
     numeroter(t, m);
     m.sets = sets;
     m.statut = 'termine';
@@ -1637,6 +1714,7 @@
       ? 'Les matchs sont appelés au fur et à mesure que les terrains se libèrent. Chaque match a un numéro.'
       : 'Les organisateurs appellent les matchs au fur et à mesure que les terrains se libèrent. Chaque match a un numéro.');
     app.push('Une équipe ne joue qu’un match à la fois. Le site évite de faire rejouer tout de suite une équipe qui sort du terrain, puis fait passer celles qui ont le moins joué. Les organisateurs peuvent faire passer un match en priorité.');
+    if (r.pointage) app.push('À ton arrivée, signale-toi sur ton téléphone (bouton « On est arrivés » sur la page de ton équipe) ou à la table de marque. Les matchs de ton équipe ne sont appelés qu’une fois pointée.');
     app.push('Quand ton match est appelé, il s’affiche sur l’écran de la salle et sur ton téléphone, avec le numéro du terrain.');
     sections.push({ titre: 'Appel des matchs', lignes: app });
 
@@ -1828,7 +1906,7 @@
     uid, esc, entier,
     nouveauTournoi, ajusterEquipes, equipe, nomEquipe, statut, texteFormat,
     verifierFormat, paires, ordonner, genererMatchs,
-    matchsEnCours, matchsEnAttente, terrainsLibres, terrainsFermes, terrainFerme, nbTerrainsOuverts, fermerTerrain, ouvrirTerrain, remplirTerrains, lancer, demarre, prochains, reporter, appelAutoActif,
+    matchsEnCours, matchsEnAttente, matchsAppelables, matchsEnAttenteArrivee, pointageActif, estArrivee, matchPointe, equipesAttendues, pointer, annulerPointage, pointerEquipesVenues, terrainsLibres, terrainsFermes, terrainFerme, nbTerrainsOuverts, fermerTerrain, ouvrirTerrain, remplirTerrains, lancer, demarre, prochains, reporter, appelAutoActif,
     numero, numeroActuel, attenteRepos,
     planifier, dureeMatch, dureeReglee, dureeSelonFormat, finEstimee, dureeEstimee, heureDuJour, heureFinSalle, depassementSalle, prioriser,
     resultat, texteScore, verifierSet, verifierScore, enregistrerScore,

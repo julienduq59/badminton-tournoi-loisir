@@ -17,6 +17,9 @@
   let brouillon = null;
   let brouillonModifie = false; // saisie des réglages pas encore enregistrée
   const enTraitement = new Set();
+  let arriveesRecues = {};          // arrivées signalées par les téléphones, pas encore reportées
+  const arriveesEnCours = new Set();
+  let pointeesOuvert = false;       // liste des équipes pointées dépliée
 
   /* ---------- Outils ---------- */
 
@@ -89,7 +92,8 @@
   // Feuille de matchs à imprimer (secours papier) : tous les matchs dans l'ordre des numéros.
   function imprimerFeuille() {
     const reg = t.reglages;
-    const lignes = t.matchs.slice().sort((x, y) => BT.numero(t, x) - BT.numero(t, y));
+    const num = (m) => Number(BT.numero(t, m)) || Infinity; // pas de numéro : équipe pas encore arrivée
+    const lignes = t.matchs.slice().sort((x, y) => num(x) - num(y) || x.ordre - y.ordre);
     const avecTour = lignes.some((m) => BT.etiquetteMatch(t, m));
     const caseScore = (m) => {
       if (m.statut === 'termine') return esc(m.forfait ? 'Forfait ' + BT.nomEquipe(t, m.forfait) : BT.texteScore(m));
@@ -219,6 +223,56 @@
     });
   }
 
+  /* ---------- Pointage à l'arrivée ---------- */
+
+  // Arrivées signalées depuis les téléphones : reportées dans le tournoi, puis effacées.
+  function traiterArrivees() {
+    if (!t) return;
+    Object.keys(arriveesRecues).forEach((equipeId) => {
+      if (arriveesEnCours.has(equipeId)) return;
+      arriveesEnCours.add(equipeId);
+      const brut = arriveesRecues[equipeId] || {};
+      const fini = () => D.retirerArrivee(id, equipeId).catch(() => {}).then(() => arriveesEnCours.delete(equipeId));
+      const e = t.equipes.find((x) => x.id === equipeId);
+      if (!e || e.arrivee || !BT.pointageActif(t)) { fini(); return; }
+      agir((tt) => pointerEquipe(tt, equipeId, Number(brut.date) || Date.now())).then(fini);
+    });
+  }
+
+  // Pointe une équipe, puis remplit les terrains libres si l'appel automatique tourne.
+  function pointerEquipe(tt, equipeId, quand) {
+    if (!BT.pointer(tt, equipeId, quand)) return false;
+    if (BT.appelAutoActif(tt) && BT.demarre(tt)) BT.remplirTerrains(tt);
+    return true;
+  }
+
+  // Carte de la table de marque : équipes à pointer, et celles déjà pointées (avec annulation).
+  function cartePointage(st) {
+    if (!BT.pointageActif(t) || st === 'termine' || st === 'preparation') return '';
+    const equipes = t.equipes.filter((e) => !e.abandon);
+    const attendues = BT.equipesAttendues(t);
+    const pointees = equipes.filter((e) => e.arrivee).sort((x, y) => x.arrivee - y.arrivee);
+    if (!attendues.length && st !== 'pret') return '';
+    let h = '<section class="carte carte-pointage"><div class="titre-actions"><h2>Arrivée des équipes</h2>'
+      + '<span class="pointage-compte">' + pointees.length + ' / ' + equipes.length + ' pointées</span></div>';
+    if (attendues.length) {
+      h += '<p class="note">Chaque équipe se signale sur son téléphone, sur la page de son équipe, ou tu la pointes ici à son arrivée. Ses matchs ne sont appelés qu’ensuite.</p>'
+        + '<ul class="liste-pointage">' + attendues.map((e) => '<li><span class="pointage-nom">' + esc(e.nom)
+          + (e.joueurs ? '<small>' + esc(e.joueurs) + '</small>' : '') + '</span>'
+          + '<button type="button" class="bouton petit principal" data-action="pointer" data-equipe="' + esc(e.id) + '">Pointer</button></li>').join('')
+        + '</ul>';
+    } else {
+      h += '<p class="note">Toutes les équipes sont pointées.</p>';
+    }
+    if (pointees.length) {
+      h += '<details class="pointees"' + (pointeesOuvert ? ' open' : '') + '><summary>Équipes pointées (' + pointees.length + ')</summary><ul class="liste-pointage">'
+        + pointees.map((e) => '<li><span class="pointage-nom">' + esc(e.nom) + '<small>Arrivée à ' + BT.heure(e.arrivee) + '</small></span>'
+          + '<button type="button" class="bouton petit discret" data-action="depointer" data-equipe="' + esc(e.id) + '">Annuler</button></li>').join('')
+        + '</ul></details>';
+    }
+    return h + '</section>';
+  }
+
   /* ---------- Onglets ---------- */
 
   function afficherOnglet() {
@@ -343,7 +397,7 @@
     return h;
   }
 
-  function carteTerrain(n, m, st, appelPossible) {
+  function carteTerrain(n, m, st, appelPossible, attendArrivee) {
     if (m) {
       const liste = propositionsDe(m.id);
       const accord = liste.every((p) => BT.memesSets(p.sets, liste[0].sets));
@@ -377,7 +431,7 @@
     if (st === 'pret') texte = 'En attente du lancement';
     else if (n > t.reglages.terrains) texte = 'Terrain retiré';
     else if (!BT.matchsEnAttente(t).length) texte = 'Plus de match à appeler';
-    else if (!appelPossible) texte = 'Les équipes restantes jouent déjà';
+    else if (!appelPossible) texte = attendArrivee ? 'Équipes pas encore arrivées' : 'Les équipes restantes jouent déjà';
     else if (BT.attenteRepos(t) > 0 && BT.appelAutoActif(t)) texte = 'Repos des équipes, appel dans ' + Math.max(1, Math.ceil(BT.attenteRepos(t) / 60000)) + ' min';
     const bouton = st === 'en_cours' && appelPossible && n <= t.reglages.terrains
       ? '<button type="button" class="bouton" data-action="appeler" data-terrain="' + n + '">Appeler le match suivant</button>'
@@ -449,8 +503,9 @@
       return;
     }
     const occupees = equipesOccupees();
-    const attente = BT.matchsEnAttente(t);
-    const appelPossible = attente.some((m) => !occupees.has(m.a) && !occupees.has(m.b));
+    const libresDeJouer = (m) => !occupees.has(m.a) && !occupees.has(m.b);
+    const appelPossible = BT.matchsAppelables(t).some(libresDeJouer);
+    const attendArrivee = !appelPossible && BT.matchsEnAttenteArrivee(t).some(libresDeJouer);
     const libres = BT.terrainsLibres(t);
     const suite = BT.prochains(t);
     const T = BT.nbTerrainsOuverts(t);
@@ -470,13 +525,19 @@
       h += '<section class="a-valider"><h2>Scores envoyés par les joueurs <span class="compteur">' + recus.length + '</span></h2>'
         + '<ol class="liste-matchs">' + recus.map(ligneProposition).join('') + '</ol></section>';
     }
+    h += cartePointage(st);
     if (st === 'pret') {
+      const premiers = premiersAppels();
+      const pointage = BT.pointageActif(t);
       h += '<div class="carte"><h2>Tout est prêt</h2>'
         + '<p>' + pluriel(t.matchs.length, 'match', 'matchs') + ' à jouer sur ' + pluriel(T, 'terrain') + '. '
-        + 'Au lancement, ' + (premiersAppels() > 1 ? 'les ' + premiersAppels() + ' premiers matchs sont appelés' : 'le premier match est appelé')
-        + ' sur les terrains.</p>'
+        + (pointage && !premiers
+          ? 'Aucun match ne peut encore être appelé : pointe d’abord les équipes arrivées.'
+          : 'Au lancement, ' + (premiers > 1 ? 'les ' + premiers + ' premiers matchs sont appelés' : 'le premier match est appelé')
+            + ' sur les terrains' + (pointage && BT.equipesAttendues(t).length ? ', entre équipes déjà pointées. Les autres jouent dès leur arrivée.' : '.'))
+        + '</p>'
         + '<div class="horaires-estimation">' + texteHoraires(t) + '</div>'
-        + '<button type="button" class="bouton accent grand" data-action="lancer">Lancer le tournoi</button></div>';
+        + '<button type="button" class="bouton accent grand" data-action="lancer"' + (pointage && !premiers ? ' disabled' : '') + '>Lancer le tournoi</button></div>';
     }
     if (!t.finale && BT.nbQualifies(t) >= 2 && BT.phasePoulesFinie(t)) {
       const q = BT.qualifies(t);
@@ -504,7 +565,7 @@
         + Array.from({ length: t.reglages.terrains }, (_, i) => i + 1).map((n) => '<button type="button" data-action="basculer-terrain" data-terrain="' + n + '" aria-pressed="' + !BT.terrainFerme(t, n) + '" title="' + (BT.terrainFerme(t, n) ? 'Rouvrir' : 'Fermer') + ' le terrain ' + n + '">' + n + '</button>').join('')
         + '</div></div></div>'
         + '<div class="grille-terrains">'
-        + numerosTerrains().map((n) => carteTerrain(n, BT.matchsEnCours(t).find((m) => m.terrain === n), st, appelPossible)).join('')
+        + numerosTerrains().map((n) => carteTerrain(n, BT.matchsEnCours(t).find((m) => m.terrain === n), st, appelPossible, attendArrivee)).join('')
         + '</div>';
     }
     if (suite.length) {
@@ -535,6 +596,7 @@
     if (m.statut === 'en_cours') etat = '<span class="etiquette etiquette--en_cours">Terrain ' + m.terrain + '</span>';
     else if (fini && m.forfait) etat = '<span class="etiquette etiquette--N">Forfait (' + nom(m.forfait) + ')</span>';
     else if (fini) etat = '<span class="match-score">' + esc(BT.texteScore(m)) + '</span>' + (r.gagnant ? '' : ' <span class="etiquette etiquette--N">Nul</span>');
+    else if (!BT.matchPointe(t, m)) etat = '<span class="etiquette etiquette--arrivee">Attend ' + [m.a, m.b].filter((x) => !BT.estArrivee(t, x)).map(nom).join(' et ') + '</span>';
     else if (o.suivant) etat = '<span class="etiquette">Prochain appel</span>';
     else etat = '<span class="etiquette">À jouer</span>';
     if (!fini && propositionsDe(m.id).length) etat += ' <span class="etiquette etiquette--recu">Score reçu</span>';
@@ -579,14 +641,16 @@
     const garder = (m) => !filtreEquipe || m.a === filtreEquipe || m.b === filtreEquipe;
     const enCours = BT.matchsEnCours(t).filter(garder);
     const aJouer = BT.prochains(t).filter(garder);
+    const bloques = BT.matchsEnAttenteArrivee(t).filter(garder);
     const termines = t.matchs.filter((m) => m.statut === 'termine' && garder(m)).sort((x, y) => BT.numero(t, x) - BT.numero(t, y));
     const groupes = [
       { cle: 'en_cours', titre: 'En cours', liste: enCours },
       { cle: 'attente', titre: 'À jouer, dans l’ordre prévu', liste: aJouer },
+      { cle: 'arrivee', titre: 'En attente de l’arrivée d’une équipe', liste: bloques },
       { cle: 'termine', titre: 'Terminés', liste: termines },
     ];
-    const filtres = [['tous', 'Tous', enCours.length + aJouer.length + termines.length], ['en_cours', 'En cours', enCours.length],
-      ['attente', 'À jouer', aJouer.length], ['termine', 'Terminés', termines.length]];
+    const filtres = [['tous', 'Tous', enCours.length + aJouer.length + bloques.length + termines.length], ['en_cours', 'En cours', enCours.length],
+      ['attente', 'À jouer', aJouer.length + bloques.length], ['termine', 'Terminés', termines.length]];
     let h = progression() + '<div class="filtres">'
       + filtres.map(([cle, libelle, n]) => '<button type="button" data-action="filtre" data-valeur="' + cle + '" aria-pressed="' + (filtre === cle) + '">' + libelle + ' (' + n + ')</button>').join('')
       + '<button type="button" data-action="feuille" class="bouton-feuille">Imprimer la feuille de matchs</button>'
@@ -596,7 +660,7 @@
     const libres = BT.terrainsLibres(t);
     const occupees = equipesOccupees();
     groupes.forEach((g) => {
-      if ((filtre !== 'tous' && filtre !== g.cle) || !g.liste.length) return;
+      if ((filtre !== 'tous' && filtre !== g.cle && !(filtre === 'attente' && g.cle === 'arrivee')) || !g.liste.length) return;
       h += '<h2>' + g.titre + '</h2><ol class="liste-matchs">'
         + g.liste.map((m, i) => ligneMatch(m, { suivant: g.cle === 'attente' && i === 0, libres, occupees })).join('') + '</ol>';
     });
@@ -1023,6 +1087,9 @@
       + '<div class="resume-reglages" id="r-resume"></div>'
       + '<div class="horaires-estimation" id="r-horaires" aria-live="polite"></div>'
       + '</section>'
+      + '<section class="r-bloc"><h2>Arrivée des équipes</h2><div class="r-cases">'
+      + caseHtml('r-pointage', r.pointage, 'Pointage à l’arrivée : une équipe ne joue qu’une fois pointée. Elle se signale sur son téléphone, ou l’organisation la pointe à la table de marque.')
+      + '</div></section>'
       + '<section class="r-bloc"><h2>Scores envoyés par les joueurs</h2><div class="r-cases">'
       + caseHtml('r-joueurs', r.scoresJoueurs, 'Les joueurs peuvent envoyer le score de leur match depuis leur téléphone. Un organisateur le valide ensuite.')
       + caseHtml('r-validation', r.validationAuto, 'Valider tout seul quand les deux équipes envoient le même score')
@@ -1332,6 +1399,7 @@
       case 'r-joueurs': r.scoresJoueurs = cible.checked; break;
       case 'r-validation': r.validationAuto = cible.checked; break;
       case 'r-photos': r.photos = cible.checked; break;
+      case 'r-pointage': r.pointage = cible.checked; break;
       case 'r-photos-max': { const m = BT.entier(v, 0, 99, null); if (m !== null) r.photosMax = m; break; }
     }
     majReglages();
@@ -1369,8 +1437,10 @@
     $('#r-enregistrer').disabled = true;
     const resultat = await agir((tt) => {
       const recreer = structureChangee(tt);
+      const pointageAvant = BT.pointageActif(tt);
       tt.nom = nouveauNom;
       tt.reglages = nouveauxReglages;
+      if (BT.pointageActif(tt) && !pointageAvant) BT.pointerEquipesVenues(tt);
       if (tt.fermes) { tt.fermes = BT.terrainsFermes(tt); if (!tt.fermes.length) delete tt.fermes; }
       tt.equipes = nouvellesEquipes(tt, recreer);
       if (recreer) BT.genererMatchs(tt);
@@ -1657,6 +1727,18 @@
       case 'photos-zip':
         telechargerPhotos();
         break;
+      case 'pointer': {
+        const equipeId = el.dataset.equipe;
+        el.disabled = true;
+        agir((tt) => pointerEquipe(tt, equipeId)).then(() => D.retirerArrivee(id, equipeId).catch(() => {}));
+        break;
+      }
+      case 'depointer': {
+        const equipeId = el.dataset.equipe;
+        if (!confirm('Annuler le pointage de « ' + BT.nomEquipe(t, equipeId) + ' » ? Ses matchs ne seront plus appelés tant qu’elle n’est pas pointée.')) break;
+        D.retirerArrivee(id, equipeId).catch(() => {}).then(() => agir((tt) => BT.annulerPointage(tt, equipeId)));
+        break;
+      }
       case 'lancer-finale':
         el.disabled = true;
         agir((tt) => {
@@ -1832,6 +1914,10 @@
   });
 
   document.addEventListener('change', (e) => { if (e.target.id === 'mdp-retenir') retenirMdp = e.target.checked; });
+  // Liste des équipes pointées : reste dépliée d'un affichage à l'autre.
+  document.addEventListener('toggle', (e) => {
+    if (e.target.classList && e.target.classList.contains('pointees')) pointeesOuvert = e.target.open;
+  }, true);
   document.addEventListener('input', surSaisieReglages);
   document.addEventListener('change', surSaisieReglages);
   document.addEventListener('change', (e) => {
@@ -1952,6 +2038,12 @@
       if (matchScoreId && dialogue.open && !trouver(t, matchScoreId)) dialogue.close();
       rendre();
       traiterPropositions();
+      traiterArrivees();
+    });
+
+    D.suivreArrivees(id, (a) => {
+      arriveesRecues = a || {};
+      traiterArrivees();
     });
 
     D.suivrePropositions(id, (p) => {

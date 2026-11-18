@@ -266,8 +266,18 @@
   function blocQr() {
     const url = BT.urlPage('equipe.html', { t: t.id });
     const contenus = ['Prochain match', 'terrain'].concat(t.reglages.scoresJoueurs ? ['envoi du score'] : [], ['classement'], photosActives() ? ['photos'] : []);
+    // Des équipes à pointer : le QR code sert d'abord à signaler son arrivée.
+    const titre = BT.equipesAttendues(t).length ? 'Scanne pour pointer ton équipe' : 'Scanne pour suivre ton équipe';
     return '<div class="e-qr"><div class="qr">' + BT.qrSvg(url) + '</div>'
-      + '<p>Scanne pour suivre ton équipe<small>' + contenus.slice(0, -1).join(', ') + ' et ' + contenus[contenus.length - 1] + '</small></p></div>';
+      + '<p>' + titre + '<small>' + contenus.slice(0, -1).join(', ') + ' et ' + contenus[contenus.length - 1] + '</small></p></div>';
+  }
+
+  // Équipes pas encore arrivées (pointage à l'arrivée).
+  function blocAttendues() {
+    const attendues = BT.equipesAttendues(t);
+    if (!attendues.length) return '';
+    return '<p class="e-attendues"><span>Pas encore arrivée' + (attendues.length > 1 ? 's' : '') + '</span>'
+      + attendues.map((e) => esc(e.nom)).join(', ') + '</p>';
   }
 
   function suite() {
@@ -285,7 +295,9 @@
       h += '<div class="e-suivant"><div class="e-suivant-num">Match ' + BT.numero(t, m) + (BT.categorieMatch(t, m) ? ' · ' + esc(BT.categorieMatch(t, m)) : '') + (lbl ? ' · ' + esc(lbl) : '') + '</div>'
         + equipeSuivante(m.a) + '<div class="e-suivant-contre">contre</div>' + equipeSuivante(m.b) + '</div>';
     } else {
-      h += '<div class="e-suivant"><div class="e-suivant-equipe">' + (BT.finaleAttendue(t) ? 'En attente des résultats pour la suite' : 'Tous les matchs sont lancés') + '</div></div>';
+      const texte = BT.matchsEnAttenteArrivee(t).length ? 'En attente de l’arrivée des équipes'
+        : BT.finaleAttendue(t) ? 'En attente des résultats pour la suite' : 'Tous les matchs sont lancés';
+      h += '<div class="e-suivant"><div class="e-suivant-equipe">' + texte + '</div></div>';
     }
     h += '</div><div class="e-suite-reste">';
     if (liste.length > 1) {
@@ -294,7 +306,7 @@
           + '<span class="e-eq">' + (BT.categorieMatch(t, x.m) ? '<span class="e-cat-liste">' + esc(BT.categorieMatch(t, x.m)) + '</span>' : '') + nom(x.m.a) + '<span class="e-contre">contre</span>' + nom(x.m.b) + '</span></li>').join('')
         + '</ol>';
     }
-    h += blocQr() + '</div></aside>';
+    h += blocAttendues() + blocQr() + '</div></aside>';
     return h;
   }
 

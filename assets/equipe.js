@@ -93,6 +93,8 @@
 
   // Formulaire d'envoi du score (conservé quand la page se met à jour).
   let envoi = null; // { matchId, saisie: [[a, b], ...], confirmer, message }
+  let arriveeEnvoi = null; // { equipe, etat: 'envoi' | 'erreur', message } pendant le pointage depuis ce téléphone
+  const listeEt = (l) => (l.length > 1 ? l.slice(0, -1).join(', ') + ' et ' + l[l.length - 1] : l[0] || '');
   // Pendant la frappe d'un score, les mises à jour en direct attendent que le champ soit quitté
   // (sinon le curseur saute et « 10 » peut devenir « 01 »).
   let renduDiffere = false;
@@ -278,6 +280,16 @@
     };
     const aJouer = ordre.filter((m) => m.a === e.id || m.b === e.id);
     const enCours = mes.find((m) => m.statut === 'en_cours');
+    // Pointage à l'arrivée : l'équipe (ou un adversaire) pas encore pointée bloque ses matchs.
+    const pointage = BT.pointageActif(t);
+    const absente = pointage && !e.arrivee && !e.abandon;
+    const bloquesMoi = BT.matchsEnAttenteArrivee(t).filter((m) => m.a === e.id || m.b === e.id);
+    // Adversaires pas encore arrivés, dans l'ordre des équipes : « ton adversaire suivant, X, n'est pas encore arrivé ».
+    const attendus = new Set(bloquesMoi.map(adversaire).filter((x) => !BT.estArrivee(t, x)));
+    const nomsAttendus = t.equipes.filter((x) => attendus.has(x.id)).map((x) => nom(x.id));
+    const phraseAttente = nomsAttendus.length > 1
+      ? 'tes adversaires suivants ne sont pas encore arrivés : ' + listeEt(nomsAttendus) + '.'
+      : 'ton adversaire suivant, ' + (nomsAttendus[0] || '') + ', n’est pas encore arrivé.';
     const joues = mes.filter((m) => m.statut === 'termine').sort((x, y) => (y.fin || 0) - (x.fin || 0));
     if (envoi && (!enCours || envoi.matchId !== enCours.id)) envoi = null;
 
@@ -330,6 +342,10 @@
       + (nuls && moi && moi.N ? '<span>' + pluriel(moi.N, 'nul') + '</span>' : '')
       + '<span>' + pluriel(moi ? moi.D : 0, 'défaite') + '</span>'
       + '</div></div></section>';
+    if (absente && st !== 'termine') h += blocPointage(e);
+    else if (pointage && e.arrivee && !e.abandon && st !== 'termine' && Date.now() - e.arrivee < 5 * 60000) {
+      h += '<p class="pointage-ok">Ton équipe est pointée, arrivée à ' + BT.heure(e.arrivee) + '.</p>';
+    }
 
     // L'équipe peut-elle encore jouer des matchs pas encore créés (phase finale) ?
     const finalePrevue = BT.finaleAttendue(t);
@@ -361,15 +377,20 @@
         else ecart = 'Encore ' + pluriel(avantProchain, 'match') + ' à appeler avant le tien' + (vers ? ', vers ' + vers + ' (estimation)' : '') + '.';
       } else if (enCours) {
         const derniereEtape = enCours.phase === 'finale' && (enCours.petite || enCours.tour === BT.nbTours(t) - 1);
-        if (enCours.phase === 'finale' && !derniereEtape) ecart = 'En cas de victoire, ton équipe joue le tour suivant.';
+        if (bloquesMoi.length) ecart = 'Ensuite, ' + phraseAttente;
+        else if (enCours.phase === 'finale' && !derniereEtape) ecart = 'En cas de victoire, ton équipe joue le tour suivant.';
         else if (suiteFinale === 'poules') ecart = BT.avecPoules(t) ? 'C’est ton dernier match de poule.' : 'C’est ton dernier match de championnat.';
         else ecart = 'C’est ton dernier match.';
+      } else if (absente) {
+        ecart = 'Tes matchs commencent une fois ton équipe pointée.';
+      } else if (bloquesMoi.length) {
+        ecart = phraseAttente.charAt(0).toUpperCase() + phraseAttente.slice(1);
       }
       h += '<section class="salle">'
         + '<div class="salle-bloc"><span class="salle-label">' + (actuel ? 'En cours dans la salle' : BT.numeroActuel(t) ? 'Dernier match appelé' : 'Pas encore commencé') + '</span>'
         + '<span class="salle-num">' + (actuel ? 'n° ' + actuel : BT.numeroActuel(t) ? 'n° ' + BT.numeroActuel(t) : 'Bientôt') + '</span></div>'
         + '<div class="salle-bloc salle-bloc--moi"><span class="salle-label">' + (enCours ? 'Ton match' : 'Ton prochain match') + '</span>'
-        + '<span class="salle-num">' + (enCours ? 'n° ' + BT.numero(t, enCours) : numProchain ? 'n° ' + numProchain : suiteFinale ? 'À venir' : 'Aucun') + '</span>'
+        + '<span class="salle-num">' + (enCours ? 'n° ' + BT.numero(t, enCours) : numProchain ? 'n° ' + numProchain : absente || bloquesMoi.length ? 'En attente' : suiteFinale ? 'À venir' : 'Aucun') + '</span>'
         + ((enCours || prochain) && BT.categorieMatch(t, enCours || prochain) ? '<span class="salle-cat">' + esc(BT.categorieMatch(t, enCours || prochain)) + '</span>' : '') + '</div>'
         + (ecart ? '<p class="salle-ecart">' + ecart + '</p>' : '')
         + '</section>';
@@ -394,8 +415,15 @@
         + (enCours ? '' : blocAlerte())
         + '</section>';
     }
-    if (!enCours && !prochain) {
-      if (mes.length && suiteFinale) {
+    if (!enCours && !prochain && !absente) {
+      if (bloquesMoi.length) {
+        const m = bloquesMoi[0];
+        h += '<section class="prochain"><div class="prochain-titre">Ton prochain match' + categorie(m) + '</div>'
+          + '<div class="prochain-adversaire">contre ' + nom(adversaire(m)) + '</div>'
+          + '<p style="margin:0">Ton adversaire n’est pas encore arrivé. Le match sera appelé dès qu’il sera pointé.</p>'
+          + blocAlerte()
+          + '</section>';
+      } else if (mes.length && suiteFinale) {
         h += '<section class="prochain"><div class="prochain-titre">Tes matchs</div>'
           + '<div class="prochain-adversaire">' + (suiteFinale === 'tour' ? 'Qualifiée pour le tour suivant' : suiteFinale === 'qualifiee' ? 'Qualifiée pour la phase finale' : 'Matchs de poule joués') + '</div>'
           + '<p style="margin:0">' + (suiteFinale === 'tour' ? 'Ton adversaire sera connu à la fin de l’autre match. Reste dans la salle.'
@@ -415,8 +443,9 @@
       }
     }
 
-    if (aJouer.length > 1) {
-      h += '<h2>Ensuite, dans l’ordre prévu</h2><ol class="liste-matchs">'
+    const autresBloques = absente || prochain || enCours ? bloquesMoi : bloquesMoi.slice(1);
+    if (aJouer.length > 1 || autresBloques.length) {
+      h += '<h2>' + (absente ? 'Tes matchs à jouer' : aJouer.length > 1 ? 'Ensuite, dans l’ordre prévu' : 'Ensuite') + '</h2><ol class="liste-matchs">'
         + aJouer.slice(1).map((m) => {
           const vers = heurePrevue(m);
           const avant = ordre.indexOf(m);
@@ -424,6 +453,9 @@
             + '<span class="match-equipes">' + etiquette(m) + 'contre ' + nom(adversaire(m)) + '</span>'
             + '<span class="match-etat"><span class="etiquette">' + (vers ? 'Vers ' + vers : 'Dans ' + pluriel(avant, 'match')) + '</span></span></li>';
         }).join('')
+        + autresBloques.map((m) => '<li class="match"><span class="match-num"></span>'
+          + '<span class="match-equipes">' + etiquette(m) + 'contre ' + nom(adversaire(m)) + '</span>'
+          + '<span class="match-etat"><span class="etiquette etiquette--arrivee">' + (absente ? 'Après ton arrivée' : 'Attend ' + nom(adversaire(m))) + '</span></span></li>').join('')
         + '</ol>';
     }
 
@@ -471,6 +503,49 @@
       + '<p class="note">' + esc(BT.texteFormat(t.reglages)) + '. Mis à jour à ' + BT.heure(t.maj) + '.</p>'
       + lienOrganisateur();
     contenu.innerHTML = h;
+  }
+
+  /* ---------- Pointage à l'arrivée ---------- */
+
+  const cleArrivee = (equipe) => 'badminton:arrivee:' + id + ':' + equipe;
+
+  function blocPointage(e) {
+    let signalee = 0;
+    try { signalee = Number(localStorage.getItem(cleArrivee(e.id))) || 0; } catch (err) { /* stockage indisponible */ }
+    const envoiEnCours = arriveeEnvoi && arriveeEnvoi.equipe === e.id ? arriveeEnvoi : null;
+    let h = '<section class="pointage-tel"><h2>Ton équipe n’est pas encore pointée</h2>';
+    if (envoiEnCours && envoiEnCours.etat === 'envoi') {
+      h += '<p>Envoi de ton arrivée…</p>';
+    } else if (signalee && Date.now() - signalee < 3 * 60000) {
+      h += '<p>Arrivée signalée à ' + BT.heure(signalee) + '. La table de marque la reçoit dans un instant, tes matchs seront ensuite appelés.</p>';
+    } else {
+      h += '<p>Tes matchs ne sont appelés qu’une fois ton équipe arrivée. Dans la salle, touche le bouton ou passe à la table de marque.</p>'
+        + '<button type="button" class="bouton accent grand" data-action="arrivee">On est arrivés</button>';
+      if (envoiEnCours && envoiEnCours.etat === 'erreur') h += '<p class="erreur-champ">' + esc(envoiEnCours.message) + '</p>';
+    }
+    return h + '</section>';
+  }
+
+  async function signalerArrivee() {
+    if (!equipeId || (arriveeEnvoi && arriveeEnvoi.etat === 'envoi')) return;
+    const equipe = equipeId;
+    arriveeEnvoi = { equipe, etat: 'envoi' };
+    rendre();
+    try {
+      await D.signalerArrivee(id, equipe);
+      try { localStorage.setItem(cleArrivee(equipe), String(Date.now())); } catch (err) { /* stockage indisponible */ }
+      arriveeEnvoi = null;
+    } catch (err) {
+      const refus = /permission/i.test(String((err && (err.code || err.message)) || ''));
+      arriveeEnvoi = {
+        equipe,
+        etat: 'erreur',
+        message: refus
+          ? 'Le pointage par téléphone n’est pas encore possible pour ce tournoi. Passe à la table de marque.'
+          : 'L’envoi n’a pas abouti. Vérifie ta connexion et réessaie, ou passe à la table de marque.',
+      };
+    }
+    rendre();
   }
 
   /* ---------- Classement en direct ---------- */
@@ -1036,6 +1111,9 @@
         if (confirm('Retirer la photo de l’équipe ?')) {
           D.retirerPhotoEquipe(id, equipeId).catch((err) => alert(BT.Photos.messageErreur(err)));
         }
+        break;
+      case 'arrivee':
+        signalerArrivee();
         break;
       case 'regles-lues':
         marquerReglesLues();

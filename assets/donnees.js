@@ -166,6 +166,20 @@
       return !!registre.trouver(id) || !!lireJSON(cleTournoi(id));
     },
 
+    /* Pointage à l'arrivée : dans ce navigateur, l'arrivée va directement dans le tournoi. */
+    async signalerArrivee(id, equipeId) {
+      await local.modifier(id, (t) => {
+        if (!BT.pointer(t, equipeId)) return false;
+        if (BT.appelAutoActif(t) && BT.demarre(t)) BT.remplirTerrains(t);
+        return true;
+      });
+      return 'pointee';
+    },
+    suivreArrivees() {
+      return () => {};
+    },
+    async retirerArrivee() {},
+
     async assurerOrganisateur(id) {
       return local.estOrganisateur(id);
     },
@@ -353,6 +367,7 @@
         await db.ref('tournois/' + id).update({ donnees: null, propositions: null });
         // Photos : à part, pour que la suppression du tournoi marche même avec d'anciennes règles.
         await db.ref('tournois/' + id).update({ miniatures: null, photos: null, equipesPhotos: null }).catch(() => {});
+        await db.ref('tournois/' + id + '/arrivees').remove().catch(() => {});
       }
       effacer(cleTournoi(id));
       registre.retirer(id);
@@ -451,6 +466,35 @@
       await connecter();
       const { db } = await initialiser();
       await db.ref('tournois/' + id + '/equipesPhotos/' + equipeId).remove();
+    },
+
+    /* Pointage à l'arrivée : un joueur n'écrit pas dans le tournoi. Son téléphone dépose l'arrivée
+       dans arrivees/<équipe>, et la page de gestion la reporte dans le tournoi (avec l'appel des matchs).
+       Un appareil organisateur pointe directement. */
+    async signalerArrivee(id, equipeId) {
+      if (enLigne.estOrganisateur(id) && await enLigne.assurerOrganisateur(id).catch(() => false)) {
+        await enLigne.modifier(id, (t) => {
+          if (!BT.pointer(t, equipeId)) return false;
+          if (BT.appelAutoActif(t) && BT.demarre(t)) BT.remplirTerrains(t);
+          return true;
+        });
+        return 'pointee';
+      }
+      const utilisateur = await connecter();
+      const { db } = await initialiser();
+      await db.ref('tournois/' + id + '/arrivees/' + equipeId).set({
+        date: global.firebase.database.ServerValue.TIMESTAMP,
+        uid: utilisateur.uid,
+      });
+      return 'signalee';
+    },
+    suivreArrivees(id, rappel) {
+      return suivreChemin('tournois/' + id + '/arrivees', (val) => rappel(val || {}));
+    },
+    async retirerArrivee(id, equipeId) {
+      await connecter();
+      const { db } = await initialiser();
+      await db.ref('tournois/' + id + '/arrivees/' + equipeId).remove();
     },
 
     suivrePropositions(id, rappel) {
