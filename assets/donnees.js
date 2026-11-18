@@ -12,6 +12,14 @@
   const CLE_REGISTRE = PREFIXE + 'tournois';
   const cleTournoi = (id) => PREFIXE + 't:' + id;
   const clePropositions = (id) => PREFIXE + 'p:' + id;
+  const clePhotos = (id) => PREFIXE + 'ph:' + id;
+
+  // Vignettes de l'album, de la plus récente à la plus ancienne.
+  function listeMiniatures(brut) {
+    return Object.keys(brut || {}).map((k) => Object.assign({ id: k }, brut[k]))
+      .filter((p) => p && typeof p.image === 'string')
+      .sort((x, y) => (y.date || 0) - (x.date || 0));
+  }
 
   function lireJSON(cle) {
     try { return JSON.parse(global.localStorage.getItem(cle)); } catch (e) { return null; }
@@ -21,6 +29,10 @@
   }
   function effacer(cle) {
     try { global.localStorage.removeItem(cle); } catch (e) { /* stockage bloqué */ }
+  }
+  // Comme ecrireJSON, mais signale un stockage plein (photos en mode local).
+  function ecrireJSONouErreur(cle, valeur) {
+    try { global.localStorage.setItem(cle, JSON.stringify(valeur)); } catch (e) { throw new Error('quota : stockage plein'); }
   }
   // Supprime les valeurs undefined, refusées par la base en ligne.
   const nettoyer = (x) => JSON.parse(JSON.stringify(x));
@@ -96,8 +108,58 @@
     async supprimer(id) {
       effacer(cleTournoi(id));
       effacer(clePropositions(id));
+      effacer(clePhotos(id));
       registre.retirer(id);
       notifier(cleTournoi(id));
+    },
+
+    /* Photos (dans ce navigateur) */
+    async monIdentifiant() {
+      return 'local';
+    },
+    suivreMiniatures(id, rappel) {
+      const lire = () => rappel(listeMiniatures((lireJSON(clePhotos(id)) || {}).miniatures));
+      const arreter = abonner(clePhotos(id), lire);
+      setTimeout(lire, 0);
+      return arreter;
+    },
+    async lirePhoto(id, photoId) {
+      const d = lireJSON(clePhotos(id)) || {};
+      return d.photos && d.photos[photoId] ? d.photos[photoId].image : null;
+    },
+    async ajouterPhoto(id, p) {
+      const d = lireJSON(clePhotos(id)) || {};
+      const k = 'p' + Date.now().toString(36) + BT.uid(4);
+      d.miniatures = Object.assign({}, d.miniatures, { [k]: { image: p.mini, date: Date.now(), uid: 'local', equipe: p.equipe || '', l: p.l || 0, h: p.h || 0 } });
+      d.photos = Object.assign({}, d.photos, { [k]: { image: p.image, uid: 'local' } });
+      ecrireJSONouErreur(clePhotos(id), d);
+      notifier(clePhotos(id));
+      return k;
+    },
+    async supprimerPhoto(id, photoId) {
+      const d = lireJSON(clePhotos(id)) || {};
+      if (d.miniatures) delete d.miniatures[photoId];
+      if (d.photos) delete d.photos[photoId];
+      ecrireJSON(clePhotos(id), d);
+      notifier(clePhotos(id));
+    },
+    suivrePhotosEquipes(id, rappel) {
+      const lire = () => rappel((lireJSON(clePhotos(id)) || {}).equipes || {});
+      const arreter = abonner(clePhotos(id), lire);
+      setTimeout(lire, 0);
+      return arreter;
+    },
+    async poserPhotoEquipe(id, equipeId, image) {
+      const d = lireJSON(clePhotos(id)) || {};
+      d.equipes = Object.assign({}, d.equipes, { [equipeId]: { image, uid: 'local', date: Date.now() } });
+      ecrireJSONouErreur(clePhotos(id), d);
+      notifier(clePhotos(id));
+    },
+    async retirerPhotoEquipe(id, equipeId) {
+      const d = lireJSON(clePhotos(id)) || {};
+      if (d.equipes) delete d.equipes[equipeId];
+      ecrireJSON(clePhotos(id), d);
+      notifier(clePhotos(id));
     },
 
     estOrganisateur(id) {
@@ -199,6 +261,22 @@
     return connexion;
   }
 
+  // Suit un chemin de la base en direct ; retourne la fonction qui arrête le suivi.
+  function suivreChemin(chemin, rappel) {
+    let actif = true;
+    let ref = null;
+    let ecouteur = null;
+    initialiser().then(({ db }) => {
+      if (!actif) return;
+      ref = db.ref(chemin);
+      ecouteur = ref.on('value', (instantane) => rappel(instantane.val()), () => rappel(null));
+    }).catch(() => rappel(null));
+    return () => {
+      actif = false;
+      if (ref && ecouteur) ref.off('value', ecouteur);
+    };
+  }
+
   const enLigne = {
     enLigne: true,
 
@@ -273,6 +351,8 @@
       if (await enLigne.assurerOrganisateur(id)) {
         const { db } = await initialiser();
         await db.ref('tournois/' + id).update({ donnees: null, propositions: null });
+        // Photos : à part, pour que la suppression du tournoi marche même avec d'anciennes règles.
+        await db.ref('tournois/' + id).update({ miniatures: null, photos: null, equipesPhotos: null }).catch(() => {});
       }
       effacer(cleTournoi(id));
       registre.retirer(id);
@@ -317,6 +397,60 @@
         ecrireJSON(CLE_REGISTRE, avant ? [avant].concat(autres()) : autres());
         throw erreur;
       }
+    },
+
+    /* Photos : vignettes et photos d'équipe suivies en direct, grandes photos lues à la demande.
+       Tout le monde peut en ajouter ; chacun retire les siennes, les organisateurs toutes. */
+    // Identifiant de ce téléphone dans la base, sans créer de connexion s'il n'en a pas encore
+    // (pas de compte pour chaque spectateur ; il en a un dès qu'il envoie un score ou une photo).
+    async monIdentifiant(creer) {
+      if (creer) return (await connecter()).uid;
+      const { auth } = await initialiser();
+      if (auth.currentUser) return auth.currentUser.uid;
+      const u = await new Promise((ok) => { const arreter = auth.onAuthStateChanged((x) => { arreter(); ok(x); }); });
+      return u ? u.uid : null;
+    },
+    suivreMiniatures(id, rappel) {
+      return suivreChemin('tournois/' + id + '/miniatures', (val) => rappel(listeMiniatures(val)));
+    },
+    async lirePhoto(id, photoId) {
+      const { db } = await initialiser();
+      return (await db.ref('tournois/' + id + '/photos/' + photoId + '/image').once('value')).val();
+    },
+    async ajouterPhoto(id, p) {
+      const utilisateur = await connecter();
+      const { db } = await initialiser();
+      const k = db.ref('tournois/' + id + '/miniatures').push().key;
+      const maj = {};
+      maj['tournois/' + id + '/miniatures/' + k] = {
+        image: p.mini, date: global.firebase.database.ServerValue.TIMESTAMP, uid: utilisateur.uid, equipe: p.equipe || '', l: p.l || 0, h: p.h || 0,
+      };
+      maj['tournois/' + id + '/photos/' + k] = { image: p.image, uid: utilisateur.uid };
+      await db.ref().update(maj);
+      return k;
+    },
+    async supprimerPhoto(id, photoId) {
+      await connecter();
+      const { db } = await initialiser();
+      const maj = {};
+      maj['tournois/' + id + '/miniatures/' + photoId] = null;
+      maj['tournois/' + id + '/photos/' + photoId] = null;
+      await db.ref().update(maj);
+    },
+    suivrePhotosEquipes(id, rappel) {
+      return suivreChemin('tournois/' + id + '/equipesPhotos', (val) => rappel(val || {}));
+    },
+    async poserPhotoEquipe(id, equipeId, image) {
+      const utilisateur = await connecter();
+      const { db } = await initialiser();
+      await db.ref('tournois/' + id + '/equipesPhotos/' + equipeId).set({
+        image, uid: utilisateur.uid, date: global.firebase.database.ServerValue.TIMESTAMP,
+      });
+    },
+    async retirerPhotoEquipe(id, equipeId) {
+      await connecter();
+      const { db } = await initialiser();
+      await db.ref('tournois/' + id + '/equipesPhotos/' + equipeId).remove();
     },
 
     suivrePropositions(id, rappel) {

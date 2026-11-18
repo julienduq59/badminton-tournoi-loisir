@@ -63,10 +63,21 @@
   }
 
   // Vue affichée : l'équipe, le classement en direct ou le récap à télécharger.
-  const VUES = ['equipe', 'classement', 'recap', 'partager', 'regles'];
+  const VUES = ['equipe', 'classement', 'photos', 'recap', 'partager', 'regles'];
   let vue = VUES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'equipe';
   let recap = null; // { url, blob, nom } de la dernière image créée
   let partageEquipe = false; // QR code de l'équipe (pour un partenaire) plutôt que celui du tournoi
+  // Photos : vignettes de l'album (suivies à la première ouverture de l'onglet), photos des équipes.
+  let miniatures = null;
+  let suiviAlbum = null;
+  let monUid = null;          // identifiant de ce téléphone dans la base (connu après un premier envoi)
+  let envoiPhotos = null;     // { total, faits, erreurs, message } pendant un envoi
+  let messageAlbum = '';
+  let photosEquipes = {};
+  let suiviPhotosEquipes = null;
+  let ouverte = -1;           // photo affichée dans la visionneuse
+  const photosActives = () => !!t && t.reglages.photos !== false;
+  const photoDe = (equipe) => (photosActives() && photosEquipes[equipe] ? BT.Photos.imageSure(photosEquipes[equipe].image) : '');
   // Règles : affichées d'abord tant que ce téléphone n'a pas lu leur version actuelle.
   const cleRegles = 'badminton:regles:' + id;
   let reglesAuto = !location.hash; // seulement à l'ouverture, sans vue demandée dans l'adresse
@@ -305,7 +316,8 @@
       h += '<div class="annonce-equipe annonce-equipe--forfait">Ton équipe a été déclarée forfait pour le match ' + (num ? 'n° ' + num + ' ' : '')
         + 'contre ' + nom(adversaire(dernierFini)) + '. Va voir l’organisation.</div>';
     }
-    h += '<section class="entete-equipe"><h1>' + esc(e.nom) + '</h1>'
+    h += '<section class="entete-equipe' + (photosActives() ? ' entete-equipe--photo' : '') + '">' + blocPhotoEquipe(e)
+      + '<div class="entete-texte"><h1>' + esc(e.nom) + '</h1>'
       + (e.joueurs ? '<p class="joueurs">' + esc(e.joueurs) + '</p>' : '')
       + (e.abandon ? '<p class="joueurs">L’équipe a abandonné, ses matchs restants sont perdus par forfait.</p>' : '')
       + (parcours ? '<p class="statut-finale">' + esc(parcours) + '</p>' : '')
@@ -315,7 +327,7 @@
       + '<span>' + pluriel(moi ? moi.V : 0, 'victoire') + '</span>'
       + (nuls && moi && moi.N ? '<span>' + pluriel(moi.N, 'nul') + '</span>' : '')
       + '<span>' + pluriel(moi ? moi.D : 0, 'défaite') + '</span>'
-      + '</div></section>';
+      + '</div></div></section>';
 
     // L'équipe peut-elle encore jouer des matchs pas encore créés (phase finale) ?
     const finalePrevue = BT.finaleAttendue(t);
@@ -535,7 +547,7 @@
     if (!zone) return;
     zone.innerHTML = '<p class="note">Création de l’image…</p>';
     try {
-      const canvas = await BT.dessinerRecap(t, equipeId);
+      const canvas = await BT.dessinerRecap(t, equipeId, equipeId ? photoDe(equipeId) : '');
       const blob = await new Promise((ok) => canvas.toBlob(ok, 'image/png'));
       if (recap && recap.url) URL.revokeObjectURL(recap.url);
       const base = (equipeId ? BT.nomEquipe(t, equipeId) : t.nom).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -566,6 +578,178 @@
       + '</section>';
     genererRecap();
   }
+
+  /* ---------- Photos ---------- */
+
+  // Photo de l'équipe en tête de sa page : ajout tant qu'il n'y en a pas, changement ou retrait
+  // par le téléphone qui l'a mise ou par un organisateur.
+  function blocPhotoEquipe(e) {
+    if (!photosActives()) return '';
+    const p = photosEquipes[e.id];
+    const src = photoDe(e.id);
+    const peutChanger = !p || D.estOrganisateur(id) || (monUid && p.uid === monUid);
+    const initiales = e.nom.split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
+    return '<div class="photo-equipe">'
+      + (src ? '<img class="avatar-equipe" src="' + esc(src) + '" alt="Photo de l’équipe">' : '<span class="avatar-equipe avatar-vide" aria-hidden="true">' + esc(initiales) + '</span>')
+      + (peutChanger
+        ? '<label class="photo-equipe-bouton" for="photo-equipe">' + (src ? 'Changer' : 'Ajouter une photo') + '</label>'
+          + (src ? '<button type="button" class="photo-equipe-bouton" data-action="photo-equipe-retirer">Retirer</button>' : '')
+        : '')
+      + '</div>';
+  }
+
+  async function poserPhotoEquipe(fichier) {
+    if (!fichier || !equipeId) return;
+    try {
+      const image = await BT.Photos.preparerPhotoEquipe(fichier);
+      // Identifiant connu avant l'envoi : la page redessinée propose tout de suite Changer et Retirer.
+      monUid = await D.monIdentifiant(true);
+      await D.poserPhotoEquipe(id, equipeId, image);
+    } catch (err) {
+      alert(BT.Photos.messageErreur(err));
+    }
+  }
+
+  function suivreAlbum() {
+    if (suiviAlbum) return;
+    suiviAlbum = D.suivreMiniatures(id, (liste) => {
+      miniatures = liste;
+      if (vue === 'photos') vuePhotos();
+      if (ouverte >= 0) ouvrirPhoto(Math.min(ouverte, miniatures.length - 1));
+    });
+  }
+
+  function photosRestantes() {
+    const max = Number(t.reglages.photosMax) || 0;
+    if (!max) return Infinity;
+    const miennes = miniatures && monUid ? miniatures.filter((p) => p.uid === monUid).length : 0;
+    return Math.max(0, max - miennes);
+  }
+
+  function vuePhotos() {
+    suivreAlbum();
+    const admin = D.estOrganisateur(id);
+    const max = Number(t.reglages.photosMax) || 0;
+    const reste = photosRestantes();
+    let h = '<section class="album"><div class="album-tete"><h2>Photos du tournoi</h2>'
+      + (miniatures ? '<span class="album-compte">' + pluriel(miniatures.length, 'photo') + '</span>' : '') + '</div>';
+    if (envoiPhotos) {
+      h += '<p class="album-envoi">Envoi de la photo ' + Math.min(envoiPhotos.total, envoiPhotos.faits + envoiPhotos.erreurs + 1) + ' sur ' + envoiPhotos.total + '…</p>';
+    } else if (reste > 0) {
+      h += '<label class="bouton principal grand album-ajout" for="ajout-photos">Ajouter des photos</label>';
+      if (max) h += '<p class="note album-reste">Encore ' + reste + ' photo' + (reste > 1 ? 's' : '') + ' possible' + (reste > 1 ? 's' : '') + ' pour toi, ' + max + ' au plus par personne.</p>';
+    } else {
+      h += '<p class="album-envoi">Tu as ajouté tes ' + max + ' photos, le maximum par personne.</p>';
+    }
+    if (messageAlbum) h += '<p class="album-message">' + esc(messageAlbum) + '</p>';
+    h += '<p class="note">Tout le monde voit les photos de l’album, elles passent aussi sur l’écran de la salle. '
+      + (admin ? 'Tu es organisateur : tu peux retirer n’importe quelle photo en l’ouvrant.' : 'Tu peux retirer celles que tu as ajoutées en les ouvrant.') + '</p>';
+    if (!miniatures) {
+      h += '<p class="note">Chargement des photos…</p>';
+    } else if (!miniatures.length) {
+      h += '<div class="album-vide">Pas encore de photo. Ajoute la première.</div>';
+    } else {
+      h += '<div class="album-grille">' + miniatures.map((p, i) => {
+        const src = BT.Photos.imageSure(p.image);
+        return src ? '<button type="button" class="vignette" data-photo="' + i + '" aria-label="Ouvrir la photo ' + (i + 1) + '"><img src="' + esc(src) + '" alt="" loading="lazy"></button>' : '';
+      }).join('') + '</div>';
+    }
+    h += '</section>';
+    contenu.innerHTML = h;
+    contenu.dataset.album = String(max);
+  }
+
+  async function ajouterPhotos(fichiers) {
+    let liste = Array.from(fichiers || []);
+    const reste = photosRestantes();
+    const enTrop = Number.isFinite(reste) && liste.length > reste;
+    liste = liste.slice(0, Math.min(Number.isFinite(reste) ? reste : 20, 20));
+    if (!liste.length) return;
+    envoiPhotos = { total: liste.length, faits: 0, erreurs: 0, message: '' };
+    messageAlbum = '';
+    if (vue === 'photos') vuePhotos();
+    for (const f of liste) {
+      try {
+        const p = await BT.Photos.preparerPhoto(f);
+        if (!monUid) monUid = await D.monIdentifiant(true);
+        await D.ajouterPhoto(id, Object.assign(p, { equipe: equipeId || '' }));
+        envoiPhotos.faits++;
+      } catch (err) {
+        envoiPhotos.erreurs++;
+        envoiPhotos.message = BT.Photos.messageErreur(err);
+      }
+      if (vue === 'photos') vuePhotos();
+    }
+    const fin = envoiPhotos;
+    envoiPhotos = null;
+    messageAlbum = (fin.faits ? fin.faits + (fin.faits > 1 ? ' photos ajoutées.' : ' photo ajoutée.') : '')
+      + (enTrop ? ' Les autres dépassaient le maximum par personne.' : '')
+      + (fin.erreurs ? ' ' + fin.message : '');
+    if (vue === 'photos') vuePhotos();
+  }
+
+  // Visionneuse : la vignette s'affiche tout de suite, la grande photo arrive ensuite.
+  const visionneuse = document.getElementById('visionneuse');
+  function legendePhoto(p) {
+    return [p.equipe && t.equipes.some((e) => e.id === p.equipe) ? BT.nomEquipe(t, p.equipe) : '', p.date ? BT.heure(p.date) : ''].filter(Boolean).join(' · ');
+  }
+  async function ouvrirPhoto(i) {
+    if (!miniatures || !miniatures[i]) { if (visionneuse.open) visionneuse.close(); return; }
+    ouverte = i;
+    const p = miniatures[i];
+    const img = document.getElementById('vis-img');
+    const lien = document.getElementById('vis-telecharger');
+    img.src = BT.Photos.imageSure(p.image);
+    img.alt = 'Photo ' + (i + 1) + ' sur ' + miniatures.length;
+    document.getElementById('vis-legende').textContent = legendePhoto(p) || 'Photo ' + (i + 1);
+    lien.hidden = true;
+    document.getElementById('vis-supprimer').hidden = !(D.estOrganisateur(id) || (monUid && p.uid === monUid));
+    document.getElementById('vis-prec').disabled = i <= 0;
+    document.getElementById('vis-suiv').disabled = i >= miniatures.length - 1;
+    if (!visionneuse.open) visionneuse.showModal();
+    try {
+      const grande = BT.Photos.imageSure(await D.lirePhoto(id, p.id));
+      if (ouverte === i && grande) {
+        img.src = grande;
+        lien.href = grande;
+        lien.download = 'photo-' + (t.nom || 'tournoi').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + (miniatures.length - i) + '.jpg';
+        lien.hidden = false;
+      }
+    } catch (err) { /* la vignette reste affichée */ }
+  }
+  function fermerPhoto() {
+    ouverte = -1;
+    if (visionneuse.open) visionneuse.close();
+  }
+  document.getElementById('vis-fermer').addEventListener('click', fermerPhoto);
+  document.getElementById('vis-prec').addEventListener('click', () => ouvrirPhoto(ouverte - 1));
+  document.getElementById('vis-suiv').addEventListener('click', () => ouvrirPhoto(ouverte + 1));
+  visionneuse.addEventListener('close', () => { ouverte = -1; });
+  visionneuse.addEventListener('click', (e) => { if (e.target === visionneuse) fermerPhoto(); });
+  visionneuse.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft' && ouverte > 0) ouvrirPhoto(ouverte - 1);
+    if (e.key === 'ArrowRight' && miniatures && ouverte < miniatures.length - 1) ouvrirPhoto(ouverte + 1);
+  });
+  // Glisser le doigt vers la gauche ou la droite pour changer de photo.
+  let departGlisse = null;
+  document.getElementById('vis-zone').addEventListener('touchstart', (e) => { departGlisse = e.touches[0].clientX; }, { passive: true });
+  document.getElementById('vis-zone').addEventListener('touchend', (e) => {
+    if (departGlisse === null) return;
+    const dx = e.changedTouches[0].clientX - departGlisse;
+    departGlisse = null;
+    if (dx > 50 && ouverte > 0) ouvrirPhoto(ouverte - 1);
+    if (dx < -50 && miniatures && ouverte < miniatures.length - 1) ouvrirPhoto(ouverte + 1);
+  });
+  document.getElementById('vis-supprimer').addEventListener('click', async () => {
+    const p = miniatures && miniatures[ouverte];
+    if (!p || !confirm('Retirer cette photo de l’album ? Elle disparaît pour tout le monde.')) return;
+    try {
+      await D.supprimerPhoto(id, p.id);
+      fermerPhoto();
+    } catch (err) {
+      alert(BT.Photos.messageErreur(err));
+    }
+  });
 
   /* ---------- Règles du tournoi ---------- */
 
@@ -640,6 +824,8 @@
     const nav = document.getElementById('onglets-tel');
     nav.hidden = false;
     document.getElementById('onglet-equipe').textContent = equipeId ? 'Mon équipe' : 'Équipes';
+    document.getElementById('onglet-photos').hidden = !photosActives();
+    if (vue === 'photos' && !photosActives()) vue = 'equipe';
     nav.querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.vue === vue)));
   }
 
@@ -673,6 +859,11 @@
     }
     delete contenu.dataset.regles;
     if (vue === 'classement') { vueClassement(); return; }
+    if (vue === 'photos') {
+      // L'album se redessine quand ses photos ou le maximum par personne changent, pas à chaque résultat.
+      if (force || !contenu.querySelector('.album') || contenu.dataset.album !== String(Number(t.reglages.photosMax) || 0)) vuePhotos();
+      return;
+    }
     if (vue === 'partager') {
       // Le QR code ne change pas avec les résultats : pas besoin de le redessiner à chaque mise à jour.
       if (force || !contenu.querySelector('.partage')) vuePartager();
@@ -711,7 +902,21 @@
     if (b) changerVue(b.dataset.vue);
   });
 
+  // Champs vidés après chaque choix : la même photo peut être choisie à nouveau.
+  document.getElementById('ajout-photos').addEventListener('change', (e) => {
+    const fichiers = Array.from(e.target.files || []);
+    e.target.value = '';
+    ajouterPhotos(fichiers);
+  });
+  document.getElementById('photo-equipe').addEventListener('change', (e) => {
+    const fichier = e.target.files && e.target.files[0];
+    e.target.value = '';
+    poserPhotoEquipe(fichier);
+  });
+
   contenu.addEventListener('click', (e) => {
+    const vignette = e.target.closest('[data-photo]');
+    if (vignette) { ouvrirPhoto(Number(vignette.dataset.photo)); return; }
     if (e.target.closest('[data-changer]')) { retenirChoix(null); return; }
     const versVue = e.target.closest('[data-vue]');
     if (versVue) { changerVue(versVue.dataset.vue); return; }
@@ -754,6 +959,11 @@
         if (recap) {
           const fichier = new File([recap.blob], recap.nom, { type: 'image/png' });
           navigator.share({ files: [fichier], title: t.nom, text: 'Mon récap du tournoi ' + t.nom }).catch(() => {});
+        }
+        break;
+      case 'photo-equipe-retirer':
+        if (confirm('Retirer la photo de l’équipe ?')) {
+          D.retirerPhotoEquipe(id, equipeId).catch((err) => alert(BT.Photos.messageErreur(err)));
         }
         break;
       case 'regles-lues':
@@ -850,6 +1060,19 @@
       erreurConnexion = false;
       t = nouveau;
       charge = true;
+      if (t && photosActives() && !suiviPhotosEquipes) {
+        suiviPhotosEquipes = D.suivrePhotosEquipes(id, (x) => {
+          photosEquipes = x || {};
+          if (vue === 'equipe') rendreEnDirect();
+        });
+        // Téléphone qui a déjà envoyé des photos : ses boutons Changer et Retirer, son nombre de photos restantes.
+        D.monIdentifiant().then((u) => {
+          if (!u || monUid) return;
+          monUid = u;
+          if (vue === 'equipe') rendreEnDirect();
+          if (vue === 'photos') vuePhotos();
+        }).catch(() => {});
+      }
       verifierAppel();
       rendreEnDirect();
     });

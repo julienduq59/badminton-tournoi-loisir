@@ -116,6 +116,20 @@ commandes, commits et textes du site.
   écart, sinon score maximum), passage à la case suivante après 2 chiffres tapés.
 - `t.pause` suspend l'appel automatique (`appelAutoActif`), `t.annonce` est le message affiché
   sur l'écran et les téléphones.
+- Photos (`reglages.photos`, actives sauf `false` ; `reglages.photosMax` par personne, 0 = sans limite) :
+  album du tournoi (onglet « Photos » des téléphones, `#photos`) et photo de chaque équipe (en tête de sa
+  page, sur l'écran à côté de son nom et sur le récap). Tout le monde ajoute et voit les photos ; chacun
+  retire les siennes (même `uid`), les organisateurs toutes. Pas de Firebase Storage (offre Spark) : JPEG
+  en base64 réduits sur le téléphone par `assets/photos.js` (`BT.Photos` : grande 1280 px au plus, vignette
+  360 px, équipe carré 320 px, limites dans `LIMITES`, `imageSure` avant tout affichage). En ligne :
+  `tournois/<id>/miniatures/<k>` (vignette, date serveur, uid, équipe ; suivie en direct),
+  `photos/<k>` (grande, lue à la demande), `equipesPhotos/<équipe>` ; en local : clé `badminton:ph:<id>`.
+  Un spectateur ne crée pas de compte (`monIdentifiant()` sans `creer`) ; le compte anonyme n'est créé
+  qu'au premier envoi. Les champs de fichier sont dans `equipe.html`, hors du contenu redessiné (sinon un
+  choix fait pendant un rafraîchissement se perd). Le maximum par personne n'est vérifié que sur le
+  téléphone. Écran : `vue=photos` (diaporama, 7 s par photo, nouvelles photos en premier, photo retirée
+  enlevée tout de suite, grandes images gardées en adresses `blob:`), et dans `vue=alterne` quand
+  l'album n'est pas vide.
 - `assets/donnees.js` (`BT.Donnees`) cache le stockage : mode local (localStorage) quand
   `assets/config.js` vaut null, mode en ligne (Firebase Realtime Database, SDK compat chargé
   depuis gstatic) quand la configuration est remplie. Toute modification du tournoi passe par
@@ -126,6 +140,9 @@ commandes, commits et textes du site.
   `preuves/<id>/<uid>` ; la clé circule dans le lien organisateur `tournoi.html?t=<id>#cle=<clé>`.
   Connexion anonyme Firebase pour tous les appareils qui écrivent.
 - Règles de sécurité : `database.rules.json` (à recopier dans la console Firebase à chaque changement).
+  Photos : ajout par tout appareil connecté si le tournoi existe et que `reglages/photos` n'est pas
+  `false`, au nom de son propre `uid`, JPEG seulement et taille plafonnée ; retrait par son auteur ou un
+  organisateur (écriture des organisateurs au niveau `miniatures`, `photos`, `equipesPhotos`).
 - Base en ligne active depuis le 17/11/2026 : projet Firebase `badminton-tournoi-b3ae1` (compte Google
   de Julien, offre gratuite Spark, limite de 100 appareils connectés en même temps), Realtime Database
   en Belgique (`europe-west1`), connexion anonyme activée avec nettoyage automatique à 30 jours.
@@ -139,7 +156,9 @@ commandes, commits et textes du site.
   avec `database.rules.json`, lancé sans variables de proxy ; config de test injectée en
   interceptant `assets/config.js`, SDK servi depuis le paquet npm `firebase@10.12.2`).
   Vérifier : envoi de score par un téléphone, validation par un deuxième organisateur,
-  saisies simultanées, refus des écritures d'un joueur.
+  saisies simultanées, refus des écritures d'un joueur. Photos : un joueur ne retire ni ne remplace
+  celles des autres, un organisateur retire tout, ajouts refusés quand les photos sont désactivées ou
+  trop lourdes ; images de test dessinées dans le navigateur (canvas) puis données à `setInputFiles`.
 
 ## Conventions
 

@@ -31,6 +31,8 @@
     heureDebut: '',           // heure de début prévue (HH:MM)
     heureFin: '',             // heure à laquelle il faut rendre la salle (HH:MM)
     reglesPerso: '',          // règles ajoutées par les organisateurs, affichées avec les règles du tournoi
+    photos: true,             // album photo du tournoi et photos d'équipe
+    photosMax: 0,             // photos de l'album par personne (0 = sans limite)
     // Déroulement : une seule poule (championnat) ou plusieurs poules, puis phase finale éventuelle.
     format: 'championnat',
     nbPoules: 3,
@@ -1658,6 +1660,13 @@
     cla.push('Si exactement deux équipes sont à égalité, le match qu’elles ont joué l’une contre l’autre les départage. Sinon, on regarde la différence de sets, puis la différence de points, puis le nombre de points marqués, et en dernier l’ordre alphabétique.');
     sections.push({ titre: 'Classement', lignes: cla });
 
+    if (r.photos !== false) {
+      const max = Number(r.photosMax) || 0;
+      sections.push({ titre: 'Photos', lignes: [
+        'Ajoute tes photos du tournoi depuis l’onglet Photos' + (max ? ', ' + max + ' au plus par personne' : '') + '. Tout le monde les voit, elles passent aussi sur l’écran de la salle.',
+        'Chaque équipe peut mettre sa photo sur sa page. Tu peux retirer les photos que tu as ajoutées, les organisateurs peuvent retirer toutes les photos.',
+      ] });
+    }
     const perso = String(r.reglesPerso || '').split('\n').map((x) => x.trim()).filter(Boolean);
     if (perso.length) sections.push({ titre: 'Règles des organisateurs', lignes: perso });
     return sections;

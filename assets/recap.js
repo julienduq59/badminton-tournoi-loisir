@@ -174,18 +174,40 @@
     return ligneMoi ? debut.slice(0, n - 1).concat([ligneMoi]) : debut;
   }
 
-  function dessinerEquipe(ctx, t, equipeId, icone) {
+  function dessinerEquipe(ctx, t, equipeId, icone, photo) {
     const st = BT.statsTournoi(t);
     const s = BT.statsEquipe(t, equipeId);
     const e = BT.equipe(t, equipeId);
     const place = BT.placeEquipe(t, equipeId);
     entete(ctx, t, st, icone, 'RÉCAP DE L’ÉQUIPE');
 
+    // Photo de l'équipe dans un rond, à droite du nom.
+    const largeurNom = photo ? W - 2 * M - 230 : W - 2 * M;
+    if (photo) {
+      const r = 100;
+      const cx = W - M - r;
+      const cy = 380;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      const c = Math.min(photo.width, photo.height);
+      ctx.drawImage(photo, (photo.width - c) / 2, (photo.height - c) / 2, c, c, cx - r, cy - r, 2 * r, 2 * r);
+      ctx.restore();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = JAUNE;
+      ctx.stroke();
+    }
+
     ctx.font = '850 92px ' + POLICE;
-    const nomLignes = couper(ctx, e.nom, W - 2 * M, 2);
+    const nomLignes = couper(ctx, e.nom, largeurNom, 2);
     let y = 370;
-    nomLignes.forEach((ligne) => { ecrire(ctx, ligne, M, y, { taille: 92, poids: 850, max: W - 2 * M }); y += 96; });
-    if (e.joueurs) { ecrire(ctx, e.joueurs, M, y - 30, { taille: 36, poids: 600, couleur: 'rgba(255,255,255,0.75)', max: W - 2 * M }); y += 30; }
+    nomLignes.forEach((ligne) => { ecrire(ctx, ligne, M, y, { taille: 92, poids: 850, max: largeurNom }); y += 96; });
+    if (e.joueurs) { ecrire(ctx, e.joueurs, M, y - 30, { taille: 36, poids: 600, couleur: 'rgba(255,255,255,0.75)', max: largeurNom }); y += 30; }
+    if (photo && y < 500) y = 500;
 
     // Place
     y += 10;
@@ -277,14 +299,28 @@
   }
 
   // Renvoie un canvas 1080 × 1920 : récap de l'équipe, ou du tournoi sans équipe.
-  async function dessinerRecap(t, equipeId) {
+  // Photo de l'équipe (JPEG venu de la base), ou null.
+  async function chargerPhoto(src) {
+    if (!src) return null;
+    try {
+      const img = new Image();
+      img.src = src;
+      await img.decode();
+      return img;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function dessinerRecap(t, equipeId, photoEquipe) {
     const canvas = document.createElement('canvas');
     canvas.width = W;
     canvas.height = H;
     const ctx = canvas.getContext('2d');
     const icone = await chargerIcone();
+    const photo = equipeId ? await chargerPhoto(photoEquipe) : null;
     fond(ctx);
-    if (equipeId) dessinerEquipe(ctx, t, equipeId, icone);
+    if (equipeId) dessinerEquipe(ctx, t, equipeId, icone, photo);
     else dessinerTournoi(ctx, t, icone);
     return canvas;
   }

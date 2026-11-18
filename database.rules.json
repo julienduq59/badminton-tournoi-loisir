@@ -19,6 +19,27 @@
               ".validate": "newData.hasChildren(['sets', 'date', 'uid']) && newData.child('uid').val() === auth.uid"
             }
           }
+        },
+        "miniatures": {
+          ".write": "auth != null && root.child('tournois').child($id).child('admins').child(auth.uid).val() === true",
+          "$photo": {
+            ".write": "auth != null && ((!data.exists() && newData.exists() && root.child('tournois').child($id).child('donnees').exists() && root.child('tournois').child($id).child('donnees').child('reglages').child('photos').val() !== false) || (data.exists() && !newData.exists() && data.child('uid').val() === auth.uid))",
+            ".validate": "newData.hasChildren(['image', 'date', 'uid']) && newData.child('uid').val() === auth.uid && newData.child('image').isString() && newData.child('image').val().length < 60000 && newData.child('image').val().beginsWith('data:image/jpeg;base64,')"
+          }
+        },
+        "photos": {
+          ".write": "auth != null && root.child('tournois').child($id).child('admins').child(auth.uid).val() === true",
+          "$photo": {
+            ".write": "auth != null && ((!data.exists() && newData.exists() && root.child('tournois').child($id).child('donnees').exists() && root.child('tournois').child($id).child('donnees').child('reglages').child('photos').val() !== false) || (data.exists() && !newData.exists() && data.child('uid').val() === auth.uid))",
+            ".validate": "newData.hasChildren(['image', 'uid']) && newData.child('uid').val() === auth.uid && newData.child('image').isString() && newData.child('image').val().length < 700000 && newData.child('image').val().beginsWith('data:image/jpeg;base64,')"
+          }
+        },
+        "equipesPhotos": {
+          ".write": "auth != null && root.child('tournois').child($id).child('admins').child(auth.uid).val() === true",
+          "$equipe": {
+            ".write": "auth != null && (!data.exists() || data.child('uid').val() === auth.uid) && (!newData.exists() || root.child('tournois').child($id).child('donnees').exists() && root.child('tournois').child($id).child('donnees').child('reglages').child('photos').val() !== false)",
+            ".validate": "newData.hasChildren(['image', 'uid']) && newData.child('uid').val() === auth.uid && newData.child('image').isString() && newData.child('image').val().length < 80000 && newData.child('image').val().beginsWith('data:image/jpeg;base64,')"
+          }
         }
       }
     },

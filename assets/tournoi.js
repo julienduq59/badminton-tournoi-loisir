@@ -768,6 +768,7 @@
     if (enSaisie) return;
     const urlEquipes = BT.urlPage('equipe.html', { t: t.id });
     const urlEcran = (vue) => 'ecran.html?t=' + encodeURIComponent(t.id) + (vue ? '&vue=' + vue : '');
+    const photos = t.reglages.photos !== false;
     let h = '<div class="carte"><div class="qr-carte"><div class="qr">' + BT.qrSvg(urlEquipes) + '</div><div>'
       + '<h2>Page des équipes</h2>'
       + '<p>Les joueurs scannent ce QR code et choisissent leur équipe. Ils voient leur prochain match et son terrain, les matchs déjà joués avec les scores, ceux qui restent et le classement.'
@@ -821,8 +822,19 @@
       + '<a class="bouton" href="' + urlEcran('terrains') + '" target="_blank" rel="noopener">Matchs en cours seulement</a>'
       + '<a class="bouton" href="' + urlEcran('suite') + '" target="_blank" rel="noopener">Prochains matchs seulement</a>'
       + '<a class="bouton" href="' + urlEcran('classement') + '" target="_blank" rel="noopener">Classement en direct</a>'
-      + '<a class="bouton" href="' + urlEcran('alterne') + '" target="_blank" rel="noopener">Terrains et classement en alternance</a>'
-      + '</div></div>';
+      + '<a class="bouton" href="' + urlEcran('alterne') + '" target="_blank" rel="noopener">' + (photos ? 'Terrains, classement et photos en alternance' : 'Terrains et classement en alternance') + '</a>'
+      + (photos ? '<a class="bouton" href="' + urlEcran('photos') + '" target="_blank" rel="noopener">Photos en diaporama</a>' : '')
+      + '</div>'
+      + (photos ? '<p class="note">Sur les terrains, la photo de chaque équipe s’affiche à côté de son nom. En alternance, les photos passent seulement quand l’album en contient.</p>' : '')
+      + '</div>';
+    if (photos) {
+      const urlAlbum = urlEquipes + '#photos';
+      h += '<div class="carte pas-imprimer" style="margin-top:16px"><h2>Album photo</h2>'
+        + '<p>Tout le monde peut ajouter des photos depuis la page des équipes, onglet Photos'
+        + (Number(t.reglages.photosMax) ? ', ' + Number(t.reglages.photosMax) + ' au plus par personne' : '')
+        + '. Chacun peut retirer les siennes. Les organisateurs peuvent retirer n’importe quelle photo : ouvre l’album, touche la photo puis « Retirer ».</p>'
+        + '<div class="actions"><a class="bouton" href="' + esc(urlAlbum) + '" target="_blank" rel="noopener">Ouvrir l’album</a></div></div>';
+    }
     el.innerHTML = h;
     if (lienOuvert && el.querySelector('details')) el.querySelector('details').open = true;
   }
@@ -943,6 +955,11 @@
       + caseHtml('r-joueurs', r.scoresJoueurs, 'Les joueurs peuvent envoyer le score de leur match depuis leur téléphone. Un organisateur le valide ensuite.')
       + caseHtml('r-validation', r.validationAuto, 'Valider tout seul quand les deux équipes envoient le même score')
       + '</div></section>'
+      + '<section class="r-bloc"><h2>Photos</h2><div class="r-cases">'
+      + caseHtml('r-photos', r.photos !== false, 'Album photo du tournoi et photo de chaque équipe. Tout le monde ajoute ses photos depuis son téléphone et voit celles des autres.')
+      + '</div><div class="r-grille" id="r-photos-bloc">'
+      + '<div class="champ"><label for="r-photos-max">Photos par personne</label>' + nombre('r-photos-max', Number(r.photosMax) || 0, 0, 99)
+      + '<span class="aide">0 pour ne pas limiter.</span></div></div></section>'
       + '<section class="r-bloc"><h2>Règles en plus</h2>'
       + '<div class="champ"><label for="r-regles">Tes propres règles, une par ligne</label>'
       + '<textarea id="r-regles" rows="4" maxlength="1500" placeholder="Par exemple, échauffement de 2 minutes avant chaque match">' + esc(r.reglesPerso || '') + '</textarea>'
@@ -1125,6 +1142,7 @@
     }
     $('#r-plafond-bloc').hidden = !r.ecart2;
     $('#r-validation-case').hidden = !r.scoresJoueurs;
+    $('#r-photos-bloc').hidden = r.photos === false;
 
     const total = erreur ? null : compterMatchsPoules(n, r);
     const matchsFinale = Q >= 2 ? Q - 1 + (r.petiteFinale && Q >= 4 ? 1 : 0) : 0;
@@ -1240,6 +1258,8 @@
       case 'r-auto': r.appelAuto = cible.checked; break;
       case 'r-joueurs': r.scoresJoueurs = cible.checked; break;
       case 'r-validation': r.validationAuto = cible.checked; break;
+      case 'r-photos': r.photos = cible.checked; break;
+      case 'r-photos-max': { const m = BT.entier(v, 0, 99, null); if (m !== null) r.photosMax = m; break; }
     }
     majReglages();
   }

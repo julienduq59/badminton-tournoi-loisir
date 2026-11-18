@@ -1,15 +1,18 @@
-/* Écran d'affichage pour la salle : matchs en cours, prochains matchs, QR code, classement. */
+/* Écran d'affichage pour la salle : matchs en cours, prochains matchs, QR code, classement, photos. */
 (function () {
   'use strict';
   const { esc } = BT;
   const D = BT.Donnees;
   const id = BT.idDansAdresse();
   const vueDemandee = new URLSearchParams(location.search).get('vue');
-  // « alterne » : terrains et classement à tour de rôle, 20 secondes chacun.
+  // « alterne » : terrains, classement et photos à tour de rôle, 20 secondes chacun.
   let vue = vueDemandee === 'alterne' ? null : vueDemandee;
   const racine = document.getElementById('ecran');
   const CLE_SON = 'badminton:son-ecran';
   const DUREE_APPEL = 90 * 1000; // un match appelé reste mis en avant 1 min 30
+  const DUREE_VUE = 20 * 1000; // alternance : durée de chaque vue
+  const DUREE_PHOTO = 7 * 1000; // diaporama : durée de chaque photo
+  const avecAlbum = vueDemandee === 'photos' || vueDemandee === 'alterne';
   let t = null;
   let charge = false;
   let connus = null; // matchs en cours déjà vus, pour sonner à chaque nouvel appel
@@ -17,9 +20,192 @@
   const nom = (equipeId) => esc(BT.nomEquipe(t, equipeId));
   const heureMaintenant = () => new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
-  function nomComplet(equipeId) {
+  /* ---------- Photos : photo des équipes et diaporama de l'album ---------- */
+
+  let photosEquipes = {};
+  let miniatures = [];
+  let photosSuivies = false;
+  const photosActives = () => !!t && t.reglages.photos !== false;
+
+  // Les photos venues de la base sont converties une fois en adresses courtes : l'écran se
+  // redessine souvent, sans recopier ni redécoder les images à chaque fois.
+  function urlObjet(src) {
+    try {
+      const bin = atob(src.slice(src.indexOf(',') + 1));
+      const octets = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) octets[i] = bin.charCodeAt(i);
+      return URL.createObjectURL(new Blob([octets], { type: 'image/jpeg' }));
+    } catch (e) {
+      return src;
+    }
+  }
+  const liberer = (url) => { if (url && url.startsWith('blob:')) URL.revokeObjectURL(url); };
+
+  const avatars = new Map(); // équipe → { src, url }
+  function avatar(equipeId) {
+    if (!photosActives()) return '';
+    const p = photosEquipes[equipeId];
+    const src = p ? BT.Photos.imageSure(p.image) : '';
+    const deja = avatars.get(equipeId);
+    if (deja && deja.src !== src) {
+      liberer(deja.url);
+      avatars.delete(equipeId);
+    }
+    if (!src) return '';
+    if (!avatars.has(equipeId)) avatars.set(equipeId, { src, url: urlObjet(src) });
+    return '<img class="e-avatar" src="' + esc(avatars.get(equipeId).url) + '" alt="">';
+  }
+
+  function suivrePhotos() {
+    if (photosSuivies || !photosActives()) return;
+    photosSuivies = true;
+    D.suivrePhotosEquipes(id, (val) => {
+      photosEquipes = val || {};
+      if (t) rendre();
+    });
+    if (avecAlbum) D.suivreMiniatures(id, recevoirMiniatures);
+  }
+
+  // Diaporama : deux images gardées d'un affichage à l'autre (pas de clignotement quand l'écran
+  // se redessine), la photo et son fond flouté qui remplit les bords.
+  const imgPhoto = document.createElement('img');
+  imgPhoto.className = 'e-diapo-img';
+  imgPhoto.alt = '';
+  imgPhoto.addEventListener('animationend', () => imgPhoto.classList.remove('e-diapo-img--entree'));
+  const imgFond = document.createElement('img');
+  imgFond.className = 'e-diapo-fond';
+  imgFond.alt = '';
+  const diapo = { id: null, curseur: null, depuis: 0, nouvelles: [], chargement: null };
+  const grandes = new Map(); // photo → adresse de la grande image (60 au plus, les dernières montrées)
+  let miniaturesRecues = false;
+
+  function recevoirMiniatures(liste) {
+    const avant = new Set(miniatures.map((p) => p.id));
+    const ids = new Set(liste.map((p) => p.id));
+    // Une photo qui arrive passe en premier (la liste va de la plus récente à la plus ancienne).
+    if (miniaturesRecues) liste.filter((p) => !avant.has(p.id)).reverse().forEach((p) => diapo.nouvelles.push(p.id));
+    miniaturesRecues = true;
+    miniatures = liste;
+    diapo.nouvelles = diapo.nouvelles.filter((x) => ids.has(x));
+    Array.from(grandes.keys()).forEach((k) => {
+      if (!ids.has(k)) {
+        liberer(grandes.get(k));
+        grandes.delete(k);
+      }
+    });
+    // Photo retirée par son auteur ou un organisateur : elle quitte l'écran tout de suite.
+    if (diapo.id && !ids.has(diapo.id)) {
+      diapo.id = null;
+      diapo.depuis = 0;
+      imgPhoto.removeAttribute('src');
+      imgFond.removeAttribute('src');
+    }
+    if (vue === 'photos' && !diapo.id && liste.length) avancerDiapo();
+    if (t) rendre();
+  }
+
+  function photoSuivante() {
+    while (diapo.nouvelles.length) {
+      const p = miniatures.find((x) => x.id === diapo.nouvelles[0]);
+      diapo.nouvelles.shift();
+      if (p) return p;
+    }
+    if (!miniatures.length) return null;
+    // Sinon toutes les photos, de la plus ancienne à la plus récente, en boucle.
+    const ordre = miniatures.slice().reverse();
+    const p = ordre[(ordre.findIndex((x) => x.id === diapo.curseur) + 1) % ordre.length];
+    diapo.curseur = p.id;
+    return p;
+  }
+
+  const avecDelai = (promesse, ms) => Promise.race([promesse, new Promise((ok, non) => setTimeout(() => non(new Error('délai dépassé')), ms))]);
+
+  async function grandeImage(p) {
+    if (grandes.has(p.id)) {
+      const url = grandes.get(p.id);
+      grandes.delete(p.id);
+      grandes.set(p.id, url);
+      return url;
+    }
+    let src = '';
+    try { src = BT.Photos.imageSure(await avecDelai(D.lirePhoto(id, p.id), 10000)); } catch (e) { src = ''; }
+    if (!src || !miniatures.some((x) => x.id === p.id)) return '';
+    const url = urlObjet(src);
+    grandes.set(p.id, url);
+    while (grandes.size > 60) {
+      const [k, ancienne] = grandes.entries().next().value;
+      grandes.delete(k);
+      if (k !== diapo.id) liberer(ancienne);
+    }
+    return url;
+  }
+
+  async function montrerPhoto(p) {
+    if (!p) return;
+    if (p.id === diapo.id && imgPhoto.getAttribute('src')) {
+      diapo.depuis = Date.now();
+      return;
+    }
+    const mini = BT.Photos.imageSure(p.image);
+    const source = (await grandeImage(p)) || mini;
+    if (!source || !miniatures.some((x) => x.id === p.id)) return;
+    // Image décodée avant d'être montrée : elle apparaît d'un coup, sans se dessiner par morceaux.
+    const pre = new Image();
+    pre.src = source;
+    try { await pre.decode(); } catch (e) { /* montrée quand même */ }
+    if (!miniatures.some((x) => x.id === p.id)) return;
+    diapo.id = p.id;
+    diapo.depuis = Date.now();
+    imgPhoto.src = source;
+    imgFond.src = mini || source;
+    imgPhoto.classList.remove('e-diapo-img--entree');
+    void imgPhoto.offsetWidth; // relance l'apparition en fondu
+    imgPhoto.classList.add('e-diapo-img--entree');
+    if (vue === 'photos' && t) rendre();
+  }
+
+  function avancerDiapo() {
+    if (!diapo.chargement) {
+      diapo.chargement = montrerPhoto(photoSuivante()).catch(() => {}).finally(() => { diapo.chargement = null; });
+    }
+    return diapo.chargement;
+  }
+
+  function legendePhoto(p) {
+    const equipe = p.equipe && t.equipes.some((e) => e.id === p.equipe) ? BT.nomEquipe(t, p.equipe) : '';
+    return (equipe ? esc(equipe) : 'Photo du tournoi') + (p.date ? '<small>' + BT.heure(p.date) + '</small>' : '');
+  }
+
+  function diaporama() {
+    if (!photosActives()) return '<div class="e-message">L’album photo est désactivé dans les réglages du tournoi</div>';
+    const url = BT.urlPage('equipe.html', { t: t.id }) + '#photos';
+    const qr = (texte) => '<div class="e-qr e-qr--photos"><div class="qr">' + BT.qrSvg(url) + '</div><p>' + texte + '<small>Elles passent sur cet écran</small></p></div>';
+    if (!miniatures.length) {
+      return '<section class="e-diapo e-diapo--vide"><div class="e-diapo-vide"><p>Pas encore de photos</p>'
+        + qr('Scanne pour ajouter les premières') + '</div></section>';
+    }
+    const p = miniatures.find((x) => x.id === diapo.id);
+    return '<section class="e-diapo"><div class="e-diapo-cadre" id="e-diapo-cadre">'
+      + (p ? '<div class="e-diapo-legende">' + legendePhoto(p) + '</div>' : '') + '</div>'
+      + '<aside class="e-diapo-cote"><h2>Photos du tournoi</h2>'
+      + '<p class="e-diapo-compte">' + miniatures.length + '<small>photo' + (miniatures.length > 1 ? 's' : '') + ' dans l’album</small></p>'
+      + qr('Scanne pour ajouter tes photos') + '</aside></section>';
+  }
+
+  /* ---------- Terrains et prochains matchs ---------- */
+
+  function cote(equipeId, avecPhoto) {
     const e = BT.equipe(t, equipeId);
-    return esc(e.nom) + (e.joueurs ? '<small>' + esc(e.joueurs) + '</small>' : '');
+    const texte = esc(e.nom) + (e.joueurs ? '<small>' + esc(e.joueurs) + '</small>' : '');
+    const img = avecPhoto ? avatar(equipeId) : '';
+    return img
+      ? '<div class="e-court-cote e-court-cote--photo">' + img + '<div class="e-cote-nom">' + texte + '</div></div>'
+      : '<div class="e-court-cote">' + texte + '</div>';
+  }
+
+  function equipeSuivante(equipeId) {
+    const img = avatar(equipeId);
+    return '<div class="e-suivant-equipe' + (img ? ' e-suivant-equipe--photo' : '') + '">' + img + '<span>' + nom(equipeId) + '</span></div>';
   }
 
   function chrono(m) {
@@ -63,9 +249,9 @@
           return '<article class="e-terrain' + (BT.terrainFerme(t, num) ? ' e-terrain--ferme' : '') + '">' + tete + '<div class="e-court e-court--libre"><div class="e-court-libre">'
             + (BT.terrainFerme(t, num) ? 'Fermé' : st === 'pret' ? 'Bientôt' : BT.attenteRepos(t) > 0 && BT.appelAutoActif(t) ? 'Repos, reprise dans ' + Math.max(1, Math.ceil(BT.attenteRepos(t) / 60000)) + ' min' : 'Libre') + '</div></div></article>';
         }
+        // Photo des équipes à côté de leur nom, sauf dans la présentation compacte.
         return '<article class="e-terrain' + (appel ? ' e-terrain--appel' : '') + '">' + tete + '<div class="e-court">'
-          + '<div class="e-court-cote">' + nomComplet(m.a) + '</div><div class="e-court-filet"></div>'
-          + '<div class="e-court-cote">' + nomComplet(m.b) + '</div></div>'
+          + cote(m.a, n <= 12) + '<div class="e-court-filet"></div>' + cote(m.b, n <= 12) + '</div>'
           + '<div class="e-terrain-pied"><span class="e-pied-gauche">'
           + (BT.categorieMatch(t, m) ? '<span class="e-cat e-cat--' + esc(m.categorie) + '">' + esc(BT.categorieMatch(t, m)) + '</span>' : '')
           + (appel ? '<span class="e-appel">Appel</span>' : '<span class="e-etiquette">' + esc(BT.etiquetteMatch(t, m)) + '</span>') + '</span>'
@@ -76,8 +262,9 @@
 
   function blocQr() {
     const url = BT.urlPage('equipe.html', { t: t.id });
+    const contenus = ['Prochain match', 'terrain'].concat(t.reglages.scoresJoueurs ? ['envoi du score'] : [], ['classement'], photosActives() ? ['photos'] : []);
     return '<div class="e-qr"><div class="qr">' + BT.qrSvg(url) + '</div>'
-      + '<p>Scanne pour suivre ton équipe<small>Prochain match, terrain' + (t.reglages.scoresJoueurs ? ', envoi du score' : '') + ' et classement</small></p></div>';
+      + '<p>Scanne pour suivre ton équipe<small>' + contenus.slice(0, -1).join(', ') + ' et ' + contenus[contenus.length - 1] + '</small></p></div>';
   }
 
   function suite() {
@@ -93,8 +280,7 @@
       const m = liste[0].m;
       const lbl = BT.etiquetteMatch(t, m);
       h += '<div class="e-suivant"><div class="e-suivant-num">Match ' + BT.numero(t, m) + (BT.categorieMatch(t, m) ? ' · ' + esc(BT.categorieMatch(t, m)) : '') + (lbl ? ' · ' + esc(lbl) : '') + '</div>'
-        + '<div class="e-suivant-equipe">' + nom(m.a) + '</div><div class="e-suivant-contre">contre</div>'
-        + '<div class="e-suivant-equipe">' + nom(m.b) + '</div></div>';
+        + equipeSuivante(m.a) + '<div class="e-suivant-contre">contre</div>' + equipeSuivante(m.b) + '</div>';
     } else {
       h += '<div class="e-suivant"><div class="e-suivant-equipe">' + (BT.finaleAttendue(t) ? 'En attente des résultats pour la suite' : 'Tous les matchs sont lancés') + '</div></div>';
     }
@@ -181,8 +367,8 @@
   }
 
   function rendre() {
-    racine.className = 'ecran' + (vue === 'terrains' ? ' ecran--terrains' : vue === 'suite' ? ' ecran--suite' : vue === 'classement' ? ' ecran--classement' : '')
-      + (t && bandeau() ? ' ecran--annonce' : '');
+    const classes = { terrains: ' ecran--terrains', suite: ' ecran--suite', classement: ' ecran--classement', photos: ' ecran--photos' };
+    racine.className = 'ecran' + (classes[vue] || '') + (t && bandeau() ? ' ecran--annonce' : '');
     if (!t) {
       racine.innerHTML = '<div class="e-message">' + (erreurConnexion ? 'Connexion impossible, nouvel essai dans un instant' : charge ? 'Tournoi introuvable' : 'Chargement du tournoi') + '</div>';
       return;
@@ -190,11 +376,14 @@
     document.title = t.nom + ' · Écran d’affichage';
     const st = BT.statut(t);
     let h = tete() + bandeau();
-    if (st === 'preparation') h += '<div class="e-message">Les matchs ne sont pas encore prêts</div>';
+    if (vue === 'photos') h += diaporama();
+    else if (st === 'preparation') h += '<div class="e-message">Les matchs ne sont pas encore prêts</div>';
     else if (st === 'termine') h += final();
     else if (vue === 'classement') h += classementDirect();
     else h += terrains(st) + suite();
     racine.innerHTML = h;
+    const cadre = document.getElementById('e-diapo-cadre');
+    if (cadre && imgPhoto.getAttribute('src')) cadre.prepend(imgFond, imgPhoto);
     ajusterListe();
     ajusterTableau();
   }
@@ -215,19 +404,34 @@
       erreurConnexion = false;
       t = nouveau;
       charge = true;
-      if (t) sonnerSiNouvelAppel();
+      if (t) {
+        sonnerSiNouvelAppel();
+        suivrePhotos();
+      }
       rendre();
     });
   }
   suivreTournoi();
   D.economiserConnexion();
 
+  // Alternance : terrains, classement (sauf une fois le tournoi fini, déjà affiché) puis photos
+  // s'il y en a. La première photo est prête avant que le diaporama s'affiche.
   if (vueDemandee === 'alterne') {
-    setInterval(() => {
-      vue = vue === 'classement' ? null : 'classement';
-      if (t) rendre();
-    }, 20000);
+    setInterval(async () => {
+      if (!t) return;
+      const cycle = BT.statut(t) === 'termine' ? [null] : [null, 'classement'];
+      if (photosActives() && miniatures.length) cycle.push('photos');
+      const suivante = cycle[(cycle.indexOf(vue) + 1) % cycle.length];
+      if (suivante === 'photos') await avancerDiapo();
+      vue = suivante;
+      rendre();
+    }, DUREE_VUE);
   }
+
+  // Diaporama : une nouvelle photo toutes les 7 secondes.
+  setInterval(() => {
+    if (vue === 'photos' && t && photosActives() && miniatures.length && Date.now() - diapo.depuis >= DUREE_PHOTO) avancerDiapo();
+  }, 1000);
 
   // Heure, chronos et mise en avant des appels.
   setInterval(() => { if (t) rendre(); }, 15000);

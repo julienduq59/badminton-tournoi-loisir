@@ -6,10 +6,10 @@
   <title>Mon équipe · Badminton</title>
   <meta name="robots" content="noindex">
   <meta name="theme-color" content="#0a3d2b">
-  <link rel="icon" href="assets/volant.svg?v=20261118" type="image/svg+xml">
+  <link rel="icon" href="assets/volant.svg?v=20261118-2" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/icone-180.png">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="assets/style.css?v=20261118">
+  <link rel="stylesheet" href="assets/style.css?v=20261118-2">
 </head>
 <body class="page-equipe">
   <header class="barre">
@@ -20,16 +20,32 @@
   <nav class="onglets onglets-tel" id="onglets-tel" aria-label="Sections" hidden>
     <button type="button" data-vue="equipe" id="onglet-equipe">Mon équipe</button>
     <button type="button" data-vue="classement">Classement</button>
+    <button type="button" data-vue="photos" id="onglet-photos" hidden>Photos</button>
     <button type="button" data-vue="recap">Récap</button>
     <button type="button" data-vue="partager">Partager</button>
   </nav>
   <main class="contenu" id="contenu"></main>
+  <!-- Choix des photos en dehors du contenu : il se redessine pendant que la galerie du téléphone est ouverte. -->
+  <input type="file" id="ajout-photos" accept="image/*" multiple hidden>
+  <input type="file" id="photo-equipe" accept="image/*" hidden>
 
-  <script src="assets/vendor/qrcode.js?v=20261118"></script>
-  <script src="assets/config.js?v=20261118"></script>
-  <script src="assets/commun.js?v=20261118"></script>
-  <script src="assets/donnees.js?v=20261118"></script>
-  <script src="assets/recap.js?v=20261118"></script>
-  <script src="assets/equipe.js?v=20261118"></script>
+  <dialog class="visionneuse" id="visionneuse" aria-label="Photo">
+    <div class="vis-haut"><span id="vis-legende"></span><button type="button" class="bouton petit" id="vis-fermer">Fermer</button></div>
+    <div class="vis-image" id="vis-zone"><img id="vis-img" alt=""></div>
+    <div class="vis-bas">
+      <button type="button" class="bouton" id="vis-prec" aria-label="Photo précédente">‹</button>
+      <a class="bouton" id="vis-telecharger" hidden>Télécharger</a>
+      <button type="button" class="bouton danger" id="vis-supprimer" hidden>Retirer</button>
+      <button type="button" class="bouton" id="vis-suiv" aria-label="Photo suivante">›</button>
+    </div>
+  </dialog>
+
+  <script src="assets/vendor/qrcode.js?v=20261118-2"></script>
+  <script src="assets/config.js?v=20261118-2"></script>
+  <script src="assets/commun.js?v=20261118-2"></script>
+  <script src="assets/donnees.js?v=20261118-2"></script>
+  <script src="assets/photos.js?v=20261118-2"></script>
+  <script src="assets/recap.js?v=20261118-2"></script>
+  <script src="assets/equipe.js?v=20261118-2"></script>
 </body>
 </html>
