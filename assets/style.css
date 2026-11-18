@@ -1393,6 +1393,7 @@ details > summary.bouton::-webkit-details-marker { display: none; }
   text-shadow: 0 2px 8px rgba(0, 0, 0, .4);
 }
 .e-diapo-legende small { font-size: .62em; font-weight: 650; color: rgba(255, 255, 255, .78); font-variant-numeric: tabular-nums; }
+.e-diapo-nouvelle { align-self: center; padding: .25em .7em; border-radius: 999px; background: var(--jaune); color: var(--vert-900); font-size: .5em; font-weight: 850; text-transform: uppercase; letter-spacing: .08em; text-shadow: none; }
 .e-diapo-cote { min-height: 0; display: flex; flex-direction: column; }
 .e-diapo-compte { margin: 0; font-size: clamp(2rem, 4vw, 6rem); font-weight: 850; line-height: 1; font-variant-numeric: tabular-nums; }
 .e-diapo-compte small { display: block; margin-top: .3em; font-size: clamp(.9rem, 1.2vw, 1.8rem); font-weight: 650; color: rgba(255, 255, 255, .7); }

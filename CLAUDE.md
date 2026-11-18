@@ -127,9 +127,15 @@ commandes, commits et textes du site.
   Un spectateur ne crée pas de compte (`monIdentifiant()` sans `creer`) ; le compte anonyme n'est créé
   qu'au premier envoi. Les champs de fichier sont dans `equipe.html`, hors du contenu redessiné (sinon un
   choix fait pendant un rafraîchissement se perd). Le maximum par personne n'est vérifié que sur le
-  téléphone. Écran : `vue=photos` (diaporama, 7 s par photo, nouvelles photos en premier, photo retirée
-  enlevée tout de suite, grandes images gardées en adresses `blob:`), et dans `vue=alterne` quand
-  l'album n'est pas vide.
+  téléphone. Écran : `vue=photos` (diaporama, 7 s par photo, nouvelles photos en premier avec le badge
+  « Nouvelle photo » pendant 3 min, photo retirée enlevée tout de suite, grandes images gardées en
+  adresses `blob:`), et dans `vue=alterne` quand l'album n'est pas vide. Album du téléphone : vignettes
+  gardées d'un affichage à l'autre (`vignettes`, par identifiant), visionneuse suivie par identifiant
+  (`ouverte`), jamais par position (une photo qui arrive ne la fait pas changer) ; après un retrait, la
+  suivante s'affiche et « Retirer » est bloqué 1,5 s. Photos HEIC illisibles hors Safari : message dédié.
+  Organisateurs : « Télécharger toutes les photos » (onglet QR code) crée un .zip sans compression
+  (`BT.Photos.creerZip`, grandes photos de la plus ancienne à la plus récente). Les photos ne sont pas
+  dans la sauvegarde JSON et sont effacées avec le tournoi (dit dans Sauvegarde et à la suppression).
 - `assets/donnees.js` (`BT.Donnees`) cache le stockage : mode local (localStorage) quand
   `assets/config.js` vaut null, mode en ligne (Firebase Realtime Database, SDK compat chargé
   depuis gstatic) quand la configuration est remplie. Toute modification du tournoi passe par

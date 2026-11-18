@@ -761,6 +761,75 @@
 
   /* ---------- Onglet QR code ---------- */
 
+  // Toutes les photos de l'album dans un fichier .zip, de la plus ancienne à la plus récente.
+  let zipPhotos = null; // { faits, total } pendant la préparation
+  let messageZip = '';
+  const enNomDeFichier = (x) => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  function texteZip() {
+    if (!zipPhotos) return messageZip;
+    return zipPhotos.total ? 'Préparation du fichier : photo ' + Math.min(zipPhotos.faits + 1, zipPhotos.total) + ' sur ' + zipPhotos.total + '…' : 'Préparation du fichier…';
+  }
+  function majZip() {
+    const info = $('#photos-zip-info');
+    if (info) info.textContent = texteZip();
+    const bouton = document.querySelector('[data-action="photos-zip"]');
+    if (bouton) bouton.disabled = !!zipPhotos;
+  }
+  async function telechargerPhotos() {
+    if (zipPhotos) return;
+    zipPhotos = { faits: 0, total: 0 };
+    messageZip = '';
+    majZip();
+    try {
+      const liste = await new Promise((ok) => {
+        let arreter = null;
+        let recue = false;
+        arreter = D.suivreMiniatures(t.id, (l) => {
+          if (recue) return;
+          recue = true;
+          setTimeout(() => { if (arreter) arreter(); }, 0);
+          ok(l);
+        });
+      });
+      const ordre = liste.slice().reverse();
+      if (!ordre.length) {
+        messageZip = 'Pas encore de photo dans l’album.';
+        return;
+      }
+      zipPhotos.total = ordre.length;
+      majZip();
+      const fichiers = [];
+      let petites = 0;
+      for (const p of ordre) {
+        let src = '';
+        try { src = BT.Photos.imageSure(await D.lirePhoto(t.id, p.id)); } catch (err) { src = ''; }
+        if (!src) {
+          src = BT.Photos.imageSure(p.image); // la vignette, si la grande photo ne se lit pas
+          if (src) petites++;
+        }
+        if (src) {
+          const equipe = p.equipe && t.equipes.some((e) => e.id === p.equipe) ? '-' + enNomDeFichier(BT.nomEquipe(t, p.equipe)) : '';
+          fichiers.push({ nom: String(fichiers.length + 1).padStart(3, '0') + equipe + '.jpg', octets: BT.Photos.octets(src), date: p.date });
+        }
+        zipPhotos.faits++;
+        majZip();
+      }
+      const lien = document.createElement('a');
+      lien.href = URL.createObjectURL(BT.Photos.creerZip(fichiers));
+      lien.download = nomFichier('photos').replace(/\.csv$/, '.zip');
+      document.body.appendChild(lien);
+      lien.click();
+      setTimeout(() => { URL.revokeObjectURL(lien.href); lien.remove(); }, 60000);
+      messageZip = pluriel(fichiers.length, 'photo') + ' dans le fichier ' + lien.download + '.'
+        + (petites ? ' ' + pluriel(petites, 'photo est', 'photos sont') + ' en petite taille, la grande n’a pas pu être lue.' : '');
+    } catch (err) {
+      messageZip = 'Le téléchargement n’a pas abouti. Vérifie la connexion et réessaie.';
+    } finally {
+      zipPhotos = null;
+      majZip();
+    }
+  }
+
   function rendrePartager() {
     const el = $('#partager');
     const lienOuvert = !!el.querySelector('details[open]');
@@ -833,7 +902,10 @@
         + '<p>Tout le monde peut ajouter des photos depuis la page des équipes, onglet Photos'
         + (Number(t.reglages.photosMax) ? ', ' + Number(t.reglages.photosMax) + ' au plus par personne' : '')
         + '. Chacun peut retirer les siennes. Les organisateurs peuvent retirer n’importe quelle photo : ouvre l’album, touche la photo puis « Retirer ».</p>'
-        + '<div class="actions"><a class="bouton" href="' + esc(urlAlbum) + '" target="_blank" rel="noopener">Ouvrir l’album</a></div></div>';
+        + '<div class="actions"><a class="bouton" href="' + esc(urlAlbum) + '" target="_blank" rel="noopener">Ouvrir l’album</a>'
+        + '<button type="button" class="bouton" data-action="photos-zip"' + (zipPhotos ? ' disabled' : '') + '>Télécharger toutes les photos</button></div>'
+        + '<p class="note" id="photos-zip-info" role="status">' + esc(texteZip()) + '</p>'
+        + '<p class="note">Les photos ne sont pas dans la sauvegarde du tournoi et partent avec lui quand tu le supprimes. Télécharge-les avant pour les garder.</p></div>';
     }
     el.innerHTML = h;
     if (lienOuvert && el.querySelector('details')) el.querySelector('details').open = true;
@@ -974,7 +1046,8 @@
       + '<span class="note" id="r-info" role="status"></span></div>'
       + '</form>'
       + '<div class="carte" style="margin-top:16px"><h2>Sauvegarde</h2>'
-      + '<p class="note">Un fichier qui contient tout le tournoi (équipes, réglages, matchs et scores). Il se restaure depuis la page d’accueil, sur n’importe quel appareil.</p>'
+      + '<p class="note">Un fichier qui contient tout le tournoi (équipes, réglages, matchs et scores). Il se restaure depuis la page d’accueil, sur n’importe quel appareil.'
+      + (r.photos !== false ? ' Les photos n’y sont pas : télécharge-les depuis l’onglet QR code.' : '') + '</p>'
       + '<div class="actions"><button type="button" class="bouton" data-action="sauvegarde">Télécharger une sauvegarde</button></div></div>'
       + (t.matchs.length ? '<div class="carte" style="margin-top:16px"><h2>Remise à zéro</h2>'
         + '<p class="note">Effacer les scores remet tous les matchs à jouer, dans l’ordre de départ.</p>'
@@ -1581,6 +1654,9 @@
       case 'fiches':
         imprimerFiches();
         break;
+      case 'photos-zip':
+        telechargerPhotos();
+        break;
       case 'lancer-finale':
         el.disabled = true;
         agir((tt) => {
@@ -1746,7 +1822,7 @@
         }
         break;
       case 'supprimer':
-        if (confirm('Supprimer « ' + t.nom + ' » ? Les équipes, les matchs et les scores seront effacés.')) {
+        if (confirm('Supprimer « ' + t.nom + ' » ? ' + (t.reglages.photos !== false ? 'Les équipes, les matchs, les scores et les photos seront effacés.' : 'Les équipes, les matchs et les scores seront effacés.'))) {
           D.supprimer(t.id).then(() => { location.href = './'; }).catch((err) => toast('Suppression impossible. ' + err.message));
         }
         break;

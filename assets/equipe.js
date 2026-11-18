@@ -75,7 +75,9 @@
   let messageAlbum = '';
   let photosEquipes = {};
   let suiviPhotosEquipes = null;
-  let ouverte = -1;           // photo affichée dans la visionneuse
+  let ouverte = null;         // identifiant de la photo affichée dans la visionneuse
+  const vignettes = new Map(); // vignettes déjà dessinées, gardées d'un affichage à l'autre
+  const grandes = new Map();   // dernières grandes photos ouvertes (8 au plus)
   const photosActives = () => !!t && t.reglages.photos !== false;
   const photoDe = (equipe) => (photosActives() && photosEquipes[equipe] ? BT.Photos.imageSure(photosEquipes[equipe].image) : '');
   // Règles : affichées d'abord tant que ce téléphone n'a pas lu leur version actuelle.
@@ -613,9 +615,24 @@
   function suivreAlbum() {
     if (suiviAlbum) return;
     suiviAlbum = D.suivreMiniatures(id, (liste) => {
+      const avant = miniatures;
       miniatures = liste;
       if (vue === 'photos') vuePhotos();
-      if (ouverte >= 0) ouvrirPhoto(Math.min(ouverte, miniatures.length - 1));
+      if (!ouverte || !visionneuse.open) return;
+      // La visionneuse suit la photo, pas sa place : une photo qui arrive ne la fait pas changer.
+      if (liste.some((p) => p.id === ouverte)) {
+        majVisionneuse();
+        return;
+      }
+      // Photo retirée pendant qu'elle était ouverte : la suivante prend sa place, et « Retirer »
+      // attend un instant pour ne pas retirer celle-ci par erreur.
+      const ancienne = avant ? avant.findIndex((p) => p.id === ouverte) : -1;
+      const suivante = liste[Math.min(Math.max(ancienne, 0), liste.length - 1)];
+      const retirer = document.getElementById('vis-supprimer');
+      retirer.disabled = true;
+      setTimeout(() => { retirer.disabled = false; }, 1500);
+      if (suivante) ouvrirPhoto(suivante.id);
+      else fermerPhoto();
     });
   }
 
@@ -649,14 +666,40 @@
     } else if (!miniatures.length) {
       h += '<div class="album-vide">Pas encore de photo. Ajoute la première.</div>';
     } else {
-      h += '<div class="album-grille">' + miniatures.map((p, i) => {
-        const src = BT.Photos.imageSure(p.image);
-        return src ? '<button type="button" class="vignette" data-photo="' + i + '" aria-label="Ouvrir la photo ' + (i + 1) + '"><img src="' + esc(src) + '" alt="" loading="lazy"></button>' : '';
-      }).join('') + '</div>';
+      h += '<div class="album-grille" id="album-grille"></div>';
     }
     h += '</section>';
     contenu.innerHTML = h;
     contenu.dataset.album = String(max);
+    // Les vignettes déjà affichées sont reprises telles quelles : seules les nouvelles se chargent.
+    if (miniatures) {
+      const grille = document.getElementById('album-grille');
+      if (grille) grille.append(...miniatures.map(vignette).filter(Boolean));
+      const ids = new Set(miniatures.map((p) => p.id));
+      Array.from(vignettes.keys()).forEach((k) => { if (!ids.has(k)) vignettes.delete(k); });
+    }
+  }
+
+  function vignette(p, i) {
+    let bouton = vignettes.get(p.id);
+    if (!bouton) {
+      const src = BT.Photos.imageSure(p.image);
+      if (!src) return null;
+      bouton = document.createElement('button');
+      bouton.type = 'button';
+      bouton.className = 'vignette';
+      bouton.dataset.photo = p.id;
+      const img = document.createElement('img');
+      img.alt = '';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      img.src = src;
+      bouton.appendChild(img);
+      vignettes.set(p.id, bouton);
+    }
+    const legende = legendePhoto(p);
+    bouton.setAttribute('aria-label', 'Ouvrir la photo ' + (miniatures.length - i) + (legende ? ', ' + legende : ''));
+    return bouton;
   }
 
   async function ajouterPhotos(fichiers) {
@@ -693,42 +736,66 @@
   function legendePhoto(p) {
     return [p.equipe && t.equipes.some((e) => e.id === p.equipe) ? BT.nomEquipe(t, p.equipe) : '', p.date ? BT.heure(p.date) : ''].filter(Boolean).join(' · ');
   }
-  async function ouvrirPhoto(i) {
-    if (!miniatures || !miniatures[i]) { if (visionneuse.open) visionneuse.close(); return; }
-    ouverte = i;
-    const p = miniatures[i];
+  const indexOuverte = () => (miniatures && ouverte ? miniatures.findIndex((p) => p.id === ouverte) : -1);
+
+  async function ouvrirPhoto(photoId) {
+    const p = miniatures && miniatures.find((x) => x.id === photoId);
+    if (!p) { fermerPhoto(); return; }
+    if (ouverte === p.id && visionneuse.open) { majVisionneuse(); return; }
+    ouverte = p.id;
     const img = document.getElementById('vis-img');
     const lien = document.getElementById('vis-telecharger');
-    img.src = BT.Photos.imageSure(p.image);
-    img.alt = 'Photo ' + (i + 1) + ' sur ' + miniatures.length;
-    document.getElementById('vis-legende').textContent = legendePhoto(p) || 'Photo ' + (i + 1);
+    img.src = grandes.get(p.id) || BT.Photos.imageSure(p.image);
     lien.hidden = true;
-    document.getElementById('vis-supprimer').hidden = !(D.estOrganisateur(id) || (monUid && p.uid === monUid));
-    document.getElementById('vis-prec').disabled = i <= 0;
-    document.getElementById('vis-suiv').disabled = i >= miniatures.length - 1;
+    majVisionneuse();
     if (!visionneuse.open) visionneuse.showModal();
     try {
-      const grande = BT.Photos.imageSure(await D.lirePhoto(id, p.id));
-      if (ouverte === i && grande) {
+      let grande = grandes.get(p.id);
+      if (!grande) {
+        grande = BT.Photos.imageSure(await D.lirePhoto(id, p.id));
+        if (grande) {
+          grandes.set(p.id, grande);
+          if (grandes.size > 8) grandes.delete(grandes.keys().next().value);
+        }
+      }
+      if (ouverte === p.id && grande) {
         img.src = grande;
         lien.href = grande;
-        lien.download = 'photo-' + (t.nom || 'tournoi').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + (miniatures.length - i) + '.jpg';
+        lien.download = 'photo-' + (t.nom || 'tournoi').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + (miniatures.length - indexOuverte()) + '.jpg';
         lien.hidden = false;
       }
     } catch (err) { /* la vignette reste affichée */ }
   }
+  // Légende, numéro et boutons de la photo ouverte (l'album peut changer pendant qu'elle est affichée).
+  function majVisionneuse() {
+    const i = indexOuverte();
+    if (i < 0) return;
+    const p = miniatures[i];
+    const numero = miniatures.length - i; // dans l'ordre d'arrivée
+    document.getElementById('vis-img').alt = 'Photo ' + numero + ' sur ' + miniatures.length;
+    document.getElementById('vis-legende').textContent = legendePhoto(p) || 'Photo ' + numero;
+    document.getElementById('vis-supprimer').hidden = !(D.estOrganisateur(id) || (monUid && p.uid === monUid));
+    document.getElementById('vis-prec').disabled = i <= 0;
+    document.getElementById('vis-suiv').disabled = i >= miniatures.length - 1;
+  }
+  function voisine(sens) {
+    const i = indexOuverte();
+    if (i >= 0 && miniatures[i + sens]) ouvrirPhoto(miniatures[i + sens].id);
+  }
   function fermerPhoto() {
-    ouverte = -1;
+    ouverte = null;
     if (visionneuse.open) visionneuse.close();
   }
   document.getElementById('vis-fermer').addEventListener('click', fermerPhoto);
-  document.getElementById('vis-prec').addEventListener('click', () => ouvrirPhoto(ouverte - 1));
-  document.getElementById('vis-suiv').addEventListener('click', () => ouvrirPhoto(ouverte + 1));
-  visionneuse.addEventListener('close', () => { ouverte = -1; });
+  document.getElementById('vis-prec').addEventListener('click', () => voisine(-1));
+  document.getElementById('vis-suiv').addEventListener('click', () => voisine(1));
+  visionneuse.addEventListener('close', () => { ouverte = null; });
   visionneuse.addEventListener('click', (e) => { if (e.target === visionneuse) fermerPhoto(); });
-  visionneuse.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowLeft' && ouverte > 0) ouvrirPhoto(ouverte - 1);
-    if (e.key === 'ArrowRight' && miniatures && ouverte < miniatures.length - 1) ouvrirPhoto(ouverte + 1);
+  // Flèches du clavier (écoutées sur toute la page : un bouton désactivé perd le focus).
+  document.addEventListener('keydown', (e) => {
+    if (!visionneuse.open) return;
+    if (e.key === 'ArrowLeft') voisine(-1);
+    if (e.key === 'ArrowRight') voisine(1);
   });
   // Glisser le doigt vers la gauche ou la droite pour changer de photo.
   let departGlisse = null;
@@ -737,15 +804,16 @@
     if (departGlisse === null) return;
     const dx = e.changedTouches[0].clientX - departGlisse;
     departGlisse = null;
-    if (dx > 50 && ouverte > 0) ouvrirPhoto(ouverte - 1);
-    if (dx < -50 && miniatures && ouverte < miniatures.length - 1) ouvrirPhoto(ouverte + 1);
+    if (dx > 50) voisine(-1);
+    if (dx < -50) voisine(1);
   });
+  // Après un retrait, la photo suivante s'affiche (pratique pour trier l'album).
   document.getElementById('vis-supprimer').addEventListener('click', async () => {
-    const p = miniatures && miniatures[ouverte];
+    const i = indexOuverte();
+    const p = i >= 0 ? miniatures[i] : null;
     if (!p || !confirm('Retirer cette photo de l’album ? Elle disparaît pour tout le monde.')) return;
     try {
       await D.supprimerPhoto(id, p.id);
-      fermerPhoto();
     } catch (err) {
       alert(BT.Photos.messageErreur(err));
     }
@@ -916,7 +984,7 @@
 
   contenu.addEventListener('click', (e) => {
     const vignette = e.target.closest('[data-photo]');
-    if (vignette) { ouvrirPhoto(Number(vignette.dataset.photo)); return; }
+    if (vignette) { ouvrirPhoto(vignette.dataset.photo); return; }
     if (e.target.closest('[data-changer]')) { retenirChoix(null); return; }
     const versVue = e.target.closest('[data-vue]');
     if (versVue) { changerVue(versVue.dataset.vue); return; }

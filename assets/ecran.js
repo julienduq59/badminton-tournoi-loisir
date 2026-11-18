@@ -171,9 +171,12 @@
     return diapo.chargement;
   }
 
+  // Légende : équipe et heure, avec « Nouvelle photo » pendant 3 minutes après l'envoi.
   function legendePhoto(p) {
     const equipe = p.equipe && t.equipes.some((e) => e.id === p.equipe) ? BT.nomEquipe(t, p.equipe) : '';
-    return (equipe ? esc(equipe) : 'Photo du tournoi') + (p.date ? '<small>' + BT.heure(p.date) + '</small>' : '');
+    const nouvelle = p.date && Date.now() - p.date < 3 * 60 * 1000;
+    return (nouvelle ? '<span class="e-diapo-nouvelle">Nouvelle photo</span>' : '')
+      + '<span>' + (equipe ? esc(equipe) : 'Photo du tournoi') + '</span>' + (p.date ? '<small>' + BT.heure(p.date) + '</small>' : '');
   }
 
   function diaporama() {
