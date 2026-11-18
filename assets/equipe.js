@@ -617,6 +617,7 @@
     suiviAlbum = D.suivreMiniatures(id, (liste) => {
       const avant = miniatures;
       miniatures = liste;
+      if (!t) return; // tournoi supprimé : la page affiche déjà « introuvable »
       if (vue === 'photos') vuePhotos();
       if (!ouverte || !visionneuse.open) return;
       // La visionneuse suit la photo, pas sa place : une photo qui arrive ne la fait pas changer.
@@ -905,6 +906,8 @@
   }
 
   function rendre(force) {
+    // Tournoi supprimé ou photos coupées : la visionneuse se ferme.
+    if (visionneuse.open && (!t || !photosActives())) fermerPhoto();
     if (!t) { introuvable(); return; }
     document.getElementById('titre').textContent = t.nom;
     document.title = t.nom + ' · Mon équipe';
