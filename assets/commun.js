@@ -926,9 +926,14 @@
   }
 
   // Un match prioritaire est appelé avant les autres dès que ses deux équipes sont libres.
+  // Un match reporté puis mis en priorité n'est plus reporté : il passe devant dès que possible.
   function prioriser(m, active) {
-    if (active) m.priorite = true;
-    else delete m.priorite;
+    if (active) {
+      m.priorite = true;
+      delete m.reporte;
+    } else {
+      delete m.priorite;
+    }
   }
 
   // Passe un match en fin de file (équipe absente, erreur d'appel…).

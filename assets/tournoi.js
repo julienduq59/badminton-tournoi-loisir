@@ -20,6 +20,16 @@
   let arriveesRecues = {};          // arrivées signalées par les téléphones, pas encore reportées
   const arriveesEnCours = new Set();
   let pointeesOuvert = false;       // liste des équipes pointées dépliée
+  // Son à la table de marque : un bip à chaque score envoyé par un téléphone et à chaque équipe
+  // pointée depuis son téléphone (le navigateur demande un clic pour réactiver le son après un rechargement).
+  const CLE_SON_ORGA = 'badminton:son-orga';
+  function sonOrgaVoulu() {
+    try { return localStorage.getItem(CLE_SON_ORGA) === 'oui'; } catch (e) { return false; }
+  }
+  function bipOrga() {
+    if (sonOrgaVoulu() && BT.sonActif()) BT.bip();
+  }
+  let clesPropositions = null; // envois de score déjà vus, pour sonner seulement aux nouveaux
 
   /* ---------- Outils ---------- */
 
@@ -239,7 +249,10 @@
       // La table de marque est prévenue de chaque arrivée signalée par un téléphone.
       let pointee = false;
       agir((tt) => { pointee = pointerEquipe(tt, equipeId, Number(brut.date) || Date.now()); return pointee; }).then(() => {
-        if (pointee) toast(BT.nomEquipe(t, equipeId) + ' est arrivée, pointée depuis son téléphone.');
+        if (pointee) {
+          toast(BT.nomEquipe(t, equipeId) + ' est arrivée, pointée depuis son téléphone.');
+          bipOrga();
+        }
         fini();
       });
     });
@@ -260,7 +273,9 @@
     const pointees = equipes.filter((e) => e.arrivee).sort((x, y) => x.arrivee - y.arrivee);
     if (!attendues.length && st !== 'pret') return '';
     let h = '<section class="carte carte-pointage"><div class="titre-actions"><h2>Arrivée des équipes</h2>'
-      + '<span class="pointage-compte">' + pointees.length + ' / ' + equipes.length + ' pointées</span></div>';
+      + '<div class="pointage-tete"><span class="pointage-compte">' + pointees.length + ' / ' + equipes.length + ' pointées</span>'
+      + (attendues.length >= 2 ? '<button type="button" class="bouton petit" data-action="tout-pointer">Tout pointer</button>' : '')
+      + '</div></div>';
     if (attendues.length) {
       h += '<p class="note">Chaque équipe se signale sur son téléphone, sur la page de son équipe, ou tu la pointes ici à son arrivée. Ses matchs ne sont appelés qu’ensuite.</p>'
         + '<ul class="liste-pointage">' + attendues.map((e) => '<li><span class="pointage-nom">' + esc(e.nom)
@@ -324,6 +339,7 @@
     rendrePartager();
     majPointagesReglages();
     afficherOnglet();
+    garderEcranAllume();
   }
 
   function progression() {
@@ -478,7 +494,8 @@
         + '<button type="submit" class="bouton petit principal">Afficher</button>'
         + '<button type="button" class="bouton petit" data-action="retirer-annonce" id="retirer-annonce">Retirer</button></div>'
         + '<p class="annonce-actuelle" id="annonce-actuelle"></p></form>'
-        + '<button type="button" class="bouton" data-action="pause" id="bouton-pause"></button></div>';
+        + '<div class="outils-boutons"><button type="button" class="bouton" data-action="pause" id="bouton-pause"></button>'
+        + '<button type="button" class="bouton" data-action="son-orga" id="bouton-son-orga" aria-pressed="false"></button></div></div>';
     }
     const champ = $('#annonce');
     const texte = t.annonce && t.annonce.texte ? t.annonce.texte : '';
@@ -491,6 +508,10 @@
     const pause = $('#bouton-pause');
     pause.textContent = t.pause ? 'Reprendre les appels' : 'Mettre les appels en pause';
     pause.className = 'bouton' + (t.pause ? ' accent' : '');
+    const son = $('#bouton-son-orga');
+    const actif = sonOrgaVoulu() && BT.sonActif();
+    son.textContent = actif ? 'Son activé' : sonOrgaVoulu() ? 'Cliquer pour réactiver le son' : 'Son à la table de marque';
+    son.setAttribute('aria-pressed', String(actif));
   }
 
   // Nombre de matchs appelés au lancement (une équipe ne joue qu'un match à la fois).
@@ -1783,6 +1804,27 @@
       case 'photos-zip':
         telechargerPhotos();
         break;
+      case 'tout-pointer': {
+        const n = BT.equipesAttendues(t).length;
+        if (!n || !confirm(n > 1 ? 'Pointer les ' + n + ' équipes pas encore arrivées ?' : 'Pointer la dernière équipe pas encore arrivée ?')) break;
+        agir((tt) => {
+          const attendues = BT.equipesAttendues(tt).map((e) => e.id);
+          attendues.forEach((x) => BT.pointer(tt, x));
+          if (attendues.length && BT.appelAutoActif(tt) && BT.demarre(tt)) BT.remplirTerrains(tt);
+          return attendues.length > 0;
+        });
+        break;
+      }
+      case 'son-orga': {
+        const activer = !(sonOrgaVoulu() && BT.sonActif());
+        try { localStorage.setItem(CLE_SON_ORGA, activer ? 'oui' : 'non'); } catch (err) { /* stockage indisponible */ }
+        if (activer) {
+          BT.activerSon();
+          setTimeout(() => { BT.bip(); rendreOutils(); }, 60);
+        }
+        rendreOutils();
+        break;
+      }
       case 'pointer': {
         const equipeId = el.dataset.equipe;
         el.disabled = true;
@@ -1975,6 +2017,38 @@
   });
 
   document.addEventListener('change', (e) => { if (e.target.id === 'mdp-retenir') retenirMdp = e.target.checked; });
+  document.addEventListener('click', (e) => {
+    const surBouton = e.target.closest && e.target.closest('[data-action="son-orga"]');
+    if (!surBouton && sonOrgaVoulu() && !BT.sonActif()) {
+      BT.activerSon();
+      setTimeout(() => { if (t && t.matchs.length) rendreOutils(); }, 60);
+    }
+  });
+
+  // Pendant le tournoi, la page de gestion garde l'écran allumé : c'est elle qui appelle les matchs
+  // et reçoit les arrivées (utile sur une tablette ou un téléphone à la table de marque).
+  let verrouEcran = null;
+  let demandeVerrou = false;
+  async function garderEcranAllume() {
+    const voulu = !!t && BT.statut(t) === 'en_cours' && !document.hidden;
+    if (!voulu) {
+      if (verrouEcran) verrouEcran.release().catch(() => {});
+      verrouEcran = null;
+      return;
+    }
+    if (verrouEcran || demandeVerrou || !('wakeLock' in navigator)) return;
+    demandeVerrou = true;
+    try {
+      verrouEcran = await navigator.wakeLock.request('screen');
+      verrouEcran.addEventListener('release', () => { verrouEcran = null; });
+    } catch (e) {
+      verrouEcran = null;
+    } finally {
+      demandeVerrou = false;
+    }
+  }
+  document.addEventListener('visibilitychange', garderEcranAllume);
+
   // Liste des équipes pointées : reste dépliée d'un affichage à l'autre.
   document.addEventListener('toggle', (e) => {
     if (e.target.classList && e.target.classList.contains('pointees')) pointeesOuvert = e.target.open;
@@ -2108,6 +2182,9 @@
     });
 
     D.suivrePropositions(id, (p) => {
+      const cles = Object.keys(p || {}).flatMap((mid) => Object.keys((p || {})[mid] || {}).map((eq) => mid + '/' + eq));
+      if (clesPropositions && cles.some((k) => !clesPropositions.has(k))) bipOrga();
+      clesPropositions = new Set(cles);
       propositions = p || {};
       if (!t) return;
       rendre();
