@@ -604,12 +604,27 @@
   majBoutonVoix();
 
   // Empêche la mise en veille de l'écran quand c'est possible.
+  // Le verrou est redemandé quand l'appareil le relâche (page de nouveau visible, économie d'énergie)
+  // et à chaque clic : certains navigateurs ne l'accordent qu'après un geste sur la page.
+  let verrouEcran = null;
+  let demandeVerrou = false;
   async function garderEveille() {
+    if (verrouEcran || demandeVerrou || !navigator.wakeLock || document.visibilityState !== 'visible') return;
+    demandeVerrou = true;
     try {
-      if (navigator.wakeLock && document.visibilityState === 'visible') await navigator.wakeLock.request('screen');
-    } catch (e) { /* non disponible */ }
+      verrouEcran = await navigator.wakeLock.request('screen');
+      verrouEcran.addEventListener('release', () => {
+        verrouEcran = null;
+        setTimeout(garderEveille, 1000);
+      });
+    } catch (e) {
+      verrouEcran = null; // non disponible, ou refusé sans geste : nouvel essai au prochain clic
+    } finally {
+      demandeVerrou = false;
+    }
   }
   document.addEventListener('visibilitychange', garderEveille);
+  document.addEventListener('click', garderEveille);
   garderEveille();
 
   rendre();

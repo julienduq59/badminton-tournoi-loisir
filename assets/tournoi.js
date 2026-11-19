@@ -495,7 +495,8 @@
         + '<button type="button" class="bouton petit" data-action="retirer-annonce" id="retirer-annonce">Retirer</button></div>'
         + '<p class="annonce-actuelle" id="annonce-actuelle"></p></form>'
         + '<div class="outils-boutons"><button type="button" class="bouton" data-action="pause" id="bouton-pause"></button>'
-        + '<button type="button" class="bouton" data-action="son-orga" id="bouton-son-orga" aria-pressed="false"></button></div></div>';
+        + '<button type="button" class="bouton" data-action="son-orga" id="bouton-son-orga" aria-pressed="false"></button>'
+        + '<span class="ecran-allume" id="ecran-allume" hidden>Écran gardé allumé</span></div></div>';
     }
     const champ = $('#annonce');
     const texte = t.annonce && t.annonce.texte ? t.annonce.texte : '';
@@ -512,6 +513,7 @@
     const actif = sonOrgaVoulu() && BT.sonActif();
     son.textContent = actif ? 'Son activé' : sonOrgaVoulu() ? 'Cliquer pour réactiver le son' : 'Son à la table de marque';
     son.setAttribute('aria-pressed', String(actif));
+    majIndicateurEcran();
   }
 
   // Nombre de matchs appelés au lancement (une équipe ne joue qu'un match à la fois).
@@ -2025,29 +2027,42 @@
     }
   });
 
-  // Pendant le tournoi, la page de gestion garde l'écran allumé : c'est elle qui appelle les matchs
-  // et reçoit les arrivées (utile sur une tablette ou un téléphone à la table de marque).
+  // Dès que les matchs sont créés et jusqu'à la fin du tournoi, la page de gestion garde l'écran allumé :
+  // c'est elle qui appelle les matchs et reçoit les arrivées pointées depuis les téléphones (utile sur
+  // une tablette ou un téléphone à la table de marque). Le verrou est redemandé s'il est relâché.
   let verrouEcran = null;
   let demandeVerrou = false;
+  function majIndicateurEcran() {
+    const el = $('#ecran-allume');
+    if (el) el.hidden = !verrouEcran;
+  }
   async function garderEcranAllume() {
-    const voulu = !!t && BT.statut(t) === 'en_cours' && !document.hidden;
+    const st = t ? BT.statut(t) : '';
+    const voulu = (st === 'pret' || st === 'en_cours') && !document.hidden;
     if (!voulu) {
       if (verrouEcran) verrouEcran.release().catch(() => {});
       verrouEcran = null;
+      majIndicateurEcran();
       return;
     }
-    if (verrouEcran || demandeVerrou || !('wakeLock' in navigator)) return;
+    if (verrouEcran || demandeVerrou || !('wakeLock' in navigator)) { majIndicateurEcran(); return; }
     demandeVerrou = true;
     try {
       verrouEcran = await navigator.wakeLock.request('screen');
-      verrouEcran.addEventListener('release', () => { verrouEcran = null; });
+      verrouEcran.addEventListener('release', () => {
+        verrouEcran = null;
+        majIndicateurEcran();
+        setTimeout(garderEcranAllume, 1000);
+      });
     } catch (e) {
-      verrouEcran = null;
+      verrouEcran = null; // refusé sans geste sur la page : nouvel essai au prochain clic
     } finally {
       demandeVerrou = false;
+      majIndicateurEcran();
     }
   }
   document.addEventListener('visibilitychange', garderEcranAllume);
+  document.addEventListener('click', () => { if (!verrouEcran) garderEcranAllume(); });
 
   // Liste des équipes pointées : reste dépliée d'un affichage à l'autre.
   document.addEventListener('toggle', (e) => {

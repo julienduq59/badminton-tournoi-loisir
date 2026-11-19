@@ -1062,6 +1062,7 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .outils-boutons { display: flex; flex-wrap: wrap; gap: 8px; }
 .outils-boutons .bouton[aria-pressed="true"] { background: var(--jaune); border-color: var(--jaune); color: var(--vert-900); }
 .pointage-tete { display: flex; align-items: center; gap: 10px; }
+.ecran-allume { align-self: center; padding: 4px 10px; border-radius: 999px; background: #e3f4ea; color: var(--vert-900); font-size: .82rem; font-weight: 700; }
 .annonce-form { flex: 1; min-width: 260px; }
 .annonce-form label { display: block; font-weight: 650; font-size: .9rem; margin-bottom: 6px; }
 .annonce-ligne { display: flex; gap: 8px; }

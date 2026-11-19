@@ -119,8 +119,11 @@ commandes, commits et textes du site.
   la limite de 100 appareils connectés. Pas sur la page de gestion.
 - Table de marque (onglet Terrains) : « Son à la table de marque » (clé locale `badminton:son-orga`, un bip à
   chaque nouvel envoi de score par un téléphone et à chaque équipe pointée depuis son téléphone ; un clic
-  le réactive après un rechargement), « Tout pointer » dans la carte d'arrivée. Pendant le tournoi
-  (`statut` en cours), la page de gestion garde l'écran allumé (Wake Lock, `garderEcranAllume`).
+  le réactive après un rechargement), « Tout pointer » dans la carte d'arrivée. Dès que les matchs sont
+  créés et jusqu'à la fin (`statut` prêt ou en cours, pointage compris), la page de gestion garde l'écran
+  allumé (Wake Lock, `garderEcranAllume`, pastille « Écran gardé allumé »). Écran allumé aussi sur
+  l'écran de la salle (toujours) et sur les téléphones avec l'alerte d'appel ; le verrou est redemandé
+  quand l'appareil le relâche et au clic suivant.
 - Page de gestion : une saisie des réglages pas encore enregistrée est gardée en changeant d'onglet
   (`brouillonModifie`). Réglages en blocs (`.r-bloc`, grille `.r-grille` de 4 colonnes égales, 2 sur
   téléphone, `champ--plein-tel` pour les listes), unité dans le champ (`.avec-unite`), bouton
