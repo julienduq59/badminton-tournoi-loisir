@@ -1765,7 +1765,9 @@
     const lignes = [];
     if (a === b) lignes.push('<p class="match-alerte">Choisis deux équipes différentes.</p>');
     else {
-      [[info.enCoursA, nA], [info.enCoursB, nB]].forEach(([m, n]) => { if (m) lignes.push('<p>' + n + ' joue en ce moment sur le terrain ' + m.terrain + '. Le match partira à la fin de son match.</p>'); });
+      const ensemble = info.enCoursA && info.enCoursA === info.enCoursB;
+      if (ensemble) lignes.push('<p>Elles jouent ensemble en ce moment sur le terrain ' + info.enCoursA.terrain + ' : le nouveau match partira après celui-ci.</p>');
+      else [[info.enCoursA, nA], [info.enCoursB, nB]].forEach(([m, n]) => { if (m) lignes.push('<p>' + n + ' joue en ce moment sur le terrain ' + m.terrain + '. Le match partira à la fin de son match.</p>'); });
       [[info.pointeeA, nA], [info.pointeeB, nB]].forEach(([ok, n]) => { if (!ok) lignes.push('<p>' + n + ' n’est pas encore pointée.</p>'); });
       if (info.prevu) {
         const num = BT.numero(t, info.prevu);
@@ -1776,7 +1778,10 @@
         lignes.push('<p class="match-alerte">' + (info.memePoule ? 'Ce match n’est pas prévu : il s’ajoute au tournoi et compte au classement.'
           : 'Ce match n’est pas prévu et les deux équipes ne sont pas dans la même poule : il s’ajoute au tournoi sans compter dans le classement des poules.') + '</p>');
       }
-      if (info.joues.length) lignes.push('<p class="match-alerte">Elles se sont déjà rencontrées (' + info.joues.map((m) => esc(BT.texteScore(m))).join(', ') + ').</p>');
+      // Revanche : permise, le site le dit simplement (ce n'est pas un refus).
+      if (info.joues.length) {
+        lignes.push('<p>Elles se sont déjà rencontrées (' + info.joues.map((m) => esc(BT.texteScore(m))).join(', ') + ') : elles rejoueront quand même ensemble.</p>');
+      }
       info.enPlus.forEach((x) => lignes.push('<p class="match-alerte">' + esc(BT.nomEquipe(t, x)) + ' a déjà tous ses matchs : ce sera un match en plus.</p>'));
       if (info.defaits.length) lignes.push('<p>Leurs autres matchs pas encore appelés sont retirés, leurs adversaires en retrouvent un autre.</p>');
       if (BT.statut(t) === 'pret') lignes.push('<p>Le tournoi n’est pas encore lancé. « Lancer maintenant » le lance avec ce match.</p>');

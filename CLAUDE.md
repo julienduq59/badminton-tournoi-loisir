@@ -101,7 +101,9 @@ commandes, commits et textes du site.
   match `force` qui compte dans leurs matchs (leurs matchs modifiables sont défaits), sinon match
   `ajoute` hors programme (« Match ajouté », compte au classement s'ils sont dans la même poule). Il part
   tout de suite sur le terrain libre donné (« Lancer maintenant sur le terrain N », même en pause), sinon
-  il passe en priorité. Pas pendant la phase finale.
+  il passe en priorité. Pas pendant la phase finale. Revanche permise (Julien le veut) : deux équipes
+  déjà rencontrées, ou qui jouent ensemble en ce moment, rejouent ensemble ; la fenêtre le dit sans
+  alerte (« elles rejoueront quand même ensemble », « le nouveau match partira après celui-ci »).
 - Phase finale : `t.finale = { taille, places }` (places dans l'ordre du tableau, '' = case vide /
   exempt), matchs avec `phase: 'finale'`, `tour`, `slot`, `petite` (3e place). `avancerTableau()`
   crée ou corrige les matchs suivants à chaque résultat (un match pas terminé suit toujours le
