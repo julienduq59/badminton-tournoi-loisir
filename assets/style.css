@@ -1216,6 +1216,11 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .r-bloc:first-child { border-top: 0; }
 .r-bloc > h2, .r-bloc > .titre-actions { margin: 0 0 14px; }
 .r-bloc > .titre-actions h2 { margin: 0; }
+.titre-boutons { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Liste d'équipes collée d'un coup (réglages, partie Équipes). */
+.coller-liste { margin: 0 0 16px; padding: 14px 16px; border: 1px solid var(--vert-200); border-radius: var(--rayon-petit); background: var(--vert-50); }
+.coller-liste textarea { min-height: 150px; font-size: .95rem; }
+.coller-liste .actions { margin-top: 4px; }
 .r-bloc h2 { font-size: 1.1rem; }
 /* Colonnes de même largeur dans tous les blocs : les champs s'alignent d'un bloc à l'autre. */
 .r-grille { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px 22px; align-items: start; }
@@ -1302,6 +1307,20 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .horaires-estimation p { margin: 0 0 6px; }
 .horaires-alerte { padding: 10px 12px; border-radius: var(--rayon-petit); background: var(--rouge-clair); color: var(--rouge); font-weight: 600; }
 .horaires-ok { color: var(--vert-700); font-weight: 600; }
+.solutions-titre { margin: 12px 0 6px; font-weight: 650; }
+.solutions-horaires { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.solutions-horaires li { display: flex; align-items: center; justify-content: space-between; gap: 8px 14px; padding: 8px 10px 8px 14px; border: 1px solid var(--bord); border-radius: var(--rayon-petit); background: #fff; }
+.solutions-horaires li > span { min-width: 0; }
+.solutions-horaires .bouton { flex: none; }
+@media (max-width: 480px) {
+  .solutions-horaires li { flex-direction: column; align-items: stretch; }
+}
+/* Champ changé par « Appliquer » (solutions horaires) : brève mise en valeur. */
+.champ-applique { animation: champ-applique 1.8s ease-out; border-radius: var(--rayon-petit); }
+@keyframes champ-applique {
+  from { background: var(--jaune-clair); box-shadow: 0 0 0 6px var(--jaune-clair); }
+  to { background: transparent; box-shadow: 0 0 0 6px transparent; }
+}
 .terrains-ouverts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .terrains-ouverts > span { font-size: .85rem; font-weight: 650; color: var(--encre-douce); }
 .terrains-ouverts .filtres { margin: 0; gap: 4px; }

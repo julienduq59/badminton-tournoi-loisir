@@ -142,6 +142,72 @@
     return t.equipes.find((e) => e.id === id) || { id, nom: 'Équipe supprimée', joueurs: '' };
   }
 
+  // Liste d'équipes collée par l'organisateur, une équipe par ligne : « Les Volants : Julien et
+  // Grégoire », « Les Volants - Julien, Grégoire », « Les Volants (Julien et Grégoire) », colonnes
+  // copiées d'un tableur (nom, joueur, joueur) ou nom seul. Les numéros et puces en tête de ligne
+  // (« 1. », « 2) », « - », « • ») sont retirés. Rend [{ nom, joueurs }] (noms coupés à 40 caractères,
+  // joueurs à 80, comme les champs des réglages).
+  function lireListeEquipes(texte) {
+    const couper = (s, n) => {
+      s = s.replace(/\s+/g, ' ').trim();
+      if (s.length <= n) return s;
+      const espace = s.lastIndexOf(' ', n);
+      return (espace > n / 2 ? s.slice(0, espace) : s.slice(0, n)).trim();
+    };
+    const relier = (noms) => {
+      noms = noms.map((x) => x.trim()).filter(Boolean);
+      return noms.length === 2 ? noms[0] + ' et ' + noms[1] : noms.join(', ');
+    };
+    const sansNumero = (s) => s.replace(/^\s*(?:[-–—*•·▪◦]+\s*|\d{1,3}\s*[.)]\s*|\d{1,3}\s+[-–—:]\s+)/, '');
+    // Premier séparateur entre le nom et les joueurs (« : » entre deux chiffres, comme 19:00, n'en est pas un).
+    const separateur = (ligne) => {
+      const re = /\s*:\s*|\s+[-–—]\s+|\s*;\s*/g;
+      let m;
+      while ((m = re.exec(ligne))) {
+        const fin = m.index + m[0].length;
+        if (m[0].trim() === ':' && /\d/.test(ligne.charAt(m.index - 1)) && /\d/.test(ligne.charAt(fin))) continue;
+        if (m.index > 0) return m;
+      }
+      return null;
+    };
+    const liste = [];
+    String(texte || '').split(/\r?\n/).forEach((brute) => {
+      const ligne = brute.replace(/\u00a0/g, ' ');
+      if (!ligne.trim()) return;
+      let nom = '';
+      let joueurs = '';
+      if (ligne.includes('\t')) {
+        const cases = ligne.split('\t').map((x) => x.trim());
+        while (cases.length && !cases[0]) cases.shift();
+        // Colonne de numéros (1, 2, 3…) avant le nom : ignorée.
+        if (cases.length > 1 && /^\d{1,3}[.)]?$/.test(cases[0])) cases.shift();
+        nom = sansNumero(cases.shift() || '');
+        joueurs = relier(cases);
+      } else {
+        const propre = sansNumero(ligne.trim()).trim();
+        const parentheses = /^(.+?)\s*\((.+)\)$/.exec(propre);
+        const sep = separateur(propre);
+        if (parentheses) {
+          nom = parentheses[1];
+          joueurs = parentheses[2];
+        } else if (sep) {
+          nom = propre.slice(0, sep.index);
+          joueurs = propre.slice(sep.index + sep[0].length);
+          if (sep[0].trim() === ';') joueurs = relier(joueurs.split(';'));
+        } else {
+          nom = propre;
+        }
+      }
+      nom = couper(nom, 40);
+      joueurs = couper(joueurs, 80);
+      if (!nom && !joueurs) return;
+      // Ligne d'en-tête d'un tableau (« Équipe », « Nom de l'équipe »…) : ignorée.
+      if (!liste.length && /^(nom( de l['’]équipe)?|équipes?|equipes?|teams?|noms?)$/i.test(nom) && (!joueurs || /joueur|player|nom/i.test(joueurs))) return;
+      liste.push({ nom, joueurs });
+    });
+    return liste;
+  }
+
   function nomEquipe(t, id) {
     return equipe(t, id).nom;
   }
@@ -814,7 +880,8 @@
   // Durée d'un match d'après les réglages : la durée prévue par les organisateurs,
   // sinon une estimation d'après le format (ms).
   function dureeReglee(r) {
-    if (Number(r.dureePrevue) > 0) return r.dureePrevue * 60 * 1000;
+    // Durée prévue par l'organisateur, sans dépasser la durée maximum d'un match.
+    if (Number(r.dureePrevue) > 0) return Math.min(Number(r.dureePrevue), Number(r.dureeLimite) > 0 ? Number(r.dureeLimite) : Infinity) * 60 * 1000;
     return dureeSelonFormat(r);
   }
 
@@ -878,6 +945,127 @@
     const limite = heureFinSalle(t, ref);
     if (!fin || limite === null) return null;
     return Math.max(0, Math.ceil((fin - limite) / 60000));
+  }
+
+  // Tournoi pas commencé qui finirait après l'heure de fin de la salle : changements de réglages qui
+  // le feraient finir au moins 10 minutes avant, chacun seul (sinon moins de points ou une durée
+  // maximum, avec moins de matchs).
+  // Chaque solution : { texte, changements, fin } ; changements = { points: 11 }, { sets: 1 },
+  // { dureeLimite: 12, formatFinale: true, … }, { cat: { cle, k, max } }, { nbPoules: 4 },
+  // { terrains: 8 } ou { reposMin: 0 }. Les estimations reprennent dureeEstimee.
+  function solutionsHoraires(t) {
+    const r = t.reglages;
+    const debut = heureDuJour(r.heureDebut);
+    if (debut === null || !r.heureFin || !t.matchs.length || demarre(t)) return [];
+    const n = t.equipes.length;
+    const poules = r.format === 'poules';
+    const appliquer = (changements) => {
+      const r2 = JSON.parse(JSON.stringify(r));
+      Object.keys(changements).forEach((cle) => {
+        if (cle === 'cat') r2.cat[changements.cat.cle] = { k: changements.cat.k, max: changements.cat.max, tous: false };
+        else r2[cle] = changements[cle];
+      });
+      return r2;
+    };
+    const estimer = (changements) => {
+      const r2 = appliquer(changements);
+      if (verifierDeroulement(n, r2)) return null;
+      let tt;
+      if (changements.cat || changements.nbPoules) {
+        tt = { id: 'solution', nom: '', reglages: r2, matchs: [], equipes: t.equipes.map((e) => ({ id: e.id, nom: e.nom, joueurs: '' })) };
+        genererMatchs(tt);
+      } else {
+        tt = Object.assign({}, t, { reglages: r2 });
+      }
+      const duree = dureeEstimee(tt, dureeReglee(r2));
+      if (!duree) return null;
+      // retard : minutes qui manquent pour finir 10 minutes avant la fin de la salle.
+      return { fin: debut + duree, retard: depassementSalle(tt, debut + duree + 10 * 60000, debut) };
+    };
+    const actuel = estimer({});
+    if (!actuel || depassementSalle(t, actuel.fin, debut) === 0) return [];
+    // Première option qui tient, de la plus douce à la plus forte.
+    const premiere = (options) => {
+      for (const o of options) {
+        const e = estimer(o.changements);
+        if (e && !e.retard) return Object.assign({ fin: e.fin }, o);
+      }
+      return null;
+    };
+    const format = Number(r.dureePrevue) > 0 ? [] : null; // durée prévue fixée : points et sets n'y changent rien
+    const minutes = Math.round(dureeReglee(r) / 60000);
+    const Q = poules ? (r.qualifiesParPoule > 0 ? r.qualifiesParPoule * r.nbPoules : 0) : Number(r.phaseFinale) || 0;
+    const optionsPoints = format || [15, 11].filter((p) => p < r.points).map((p) => ({
+      texte: 'Sets de ' + p + ' points au lieu de ' + r.points,
+      avec: 'des sets de ' + p + ' points',
+      changements: { points: p, plafond: r.ecart2 ? plafondAuto(p) : Math.min(r.plafond, p) },
+    }));
+    const optionsSets = format || (r.sets > 1 ? [{
+      texte: 'Un seul set par match au lieu ' + (r.sets % 2 === 1 && r.auMeilleur ? 'du meilleur des ' + r.sets : 'de ' + r.sets),
+      changements: { sets: 1 },
+    }] : []);
+    const optionsDuree = [25, 20, 15, 12, 10, 8].filter((d) => d < minutes && (!r.dureeLimite || d < r.dureeLimite)).map((d) => {
+      const changements = { dureeLimite: d };
+      let texte = 'Durée maximum de ' + d + ' min par match' + (r.dureeLimite ? ' au lieu de ' + r.dureeLimite : '');
+      let avec = 'une durée maximum de ' + d + ' min par match';
+      if (Q >= 2 && !r.formatFinale) {
+        // Une phase finale ne peut pas finir à égalité : elle garde le format actuel, sans limite de temps.
+        Object.assign(changements, { formatFinale: true, finaleSets: r.sets % 2 === 1 ? r.sets : 1, finaleAuMeilleur: r.auMeilleur, finalePoints: r.points });
+        texte += ', phase finale sans limite de temps';
+        avec += ' (phase finale sans limite de temps)';
+      }
+      return { texte, avec, changements };
+    });
+    // Moins de matchs : la catégorie qui en compte le plus, ou une poule de plus.
+    const tailles = poules ? taillesPoules(n, r.nbPoules) : [n];
+    const cats = categoriesJouees(r).map((c) => Object.assign({}, c, { nb: c.tous ? Math.max(...tailles) - 1 : c.k }));
+    const grande = cats.sort((a, b) => b.nb - a.nb)[0];
+    const optionsMatchs = (avec) => {
+      const liste = [];
+      if (poules && grande && grande.tous) {
+        for (let p = r.nbPoules + 1; p <= Math.min(8, r.nbPoules + 2); p++) {
+          liste.push({ texte: p + ' poules au lieu de ' + r.nbPoules + ' (moins de matchs par équipe)', changements: Object.assign({ nbPoules: p }, avec) });
+        }
+      } else if (grande && grande.nb > 1) {
+        // Le plus de matchs possible (recherche par dichotomie : moins de matchs, fin plus tôt).
+        const option = (k) => ({
+          texte: k + ' ' + (k > 1 ? grande.pluriel : grande.nom.toLowerCase()) + ' par équipe au lieu de ' + grande.nb + (grande.tous ? ' (contre toutes les autres)' : ''),
+          changements: Object.assign({ cat: { cle: grande.cle, k, max: maximumNecessaire(tailles, k) } }, avec),
+        });
+        let bas = 1;
+        let haut = grande.nb - 1;
+        let trouve = null;
+        while (bas <= haut) {
+          const k = Math.floor((bas + haut) / 2);
+          const e = estimer(option(k).changements);
+          if (e && !e.retard) { trouve = Object.assign({ fin: e.fin }, option(k)); bas = k + 1; } else haut = k - 1;
+        }
+        if (trouve) liste.push(trouve);
+      }
+      return liste;
+    };
+    const solutions = [];
+    const ajouter = (s) => { if (s) solutions.push(s); };
+    ajouter(premiere(optionsPoints));
+    ajouter(premiere(optionsSets));
+    ajouter(premiere(optionsDuree));
+    const matchs = optionsMatchs({});
+    ajouter(matchs[0] && matchs[0].fin ? matchs[0] : premiere(matchs));
+    const terrains = [1, 2].filter((x) => r.terrains + x <= 30).map((x) => ({
+      texte: (r.terrains + x) + ' terrains au lieu de ' + r.terrains + ', si la salle en a',
+      changements: { terrains: r.terrains + x },
+    }));
+    ajouter(premiere(terrains));
+    if (r.reposMin > 0) ajouter(premiere([{ texte: 'Pas de repos minimum entre deux matchs', changements: { reposMin: 0 } }]));
+    if (solutions.length) return solutions;
+    // Rien ne suffit seul : le format le plus court, avec moins de matchs.
+    const courts = optionsPoints.slice(-1).concat(optionsDuree.slice(-1));
+    for (const c of courts) {
+      const avec = optionsMatchs(c.changements);
+      const s = avec[0] && avec[0].fin ? avec[0] : premiere(avec);
+      if (s) return [Object.assign({}, s, { texte: s.texte + ', avec ' + c.avec })];
+    }
+    return [];
   }
 
   // Heure de fin estimée du tournoi, ou null.
@@ -1990,11 +2178,11 @@
   global.BT = {
     REGLAGES_DEFAUT, LIBELLES_STATUT, plafondAuto, CATEGORIES, categoriesJouees, nomCategorie, categorieMatch, categorieFinale,
     uid, esc, entier,
-    nouveauTournoi, ajusterEquipes, equipe, nomEquipe, statut, texteFormat,
+    nouveauTournoi, ajusterEquipes, equipe, lireListeEquipes, nomEquipe, statut, texteFormat,
     verifierFormat, paires, ordonner, genererMatchs,
     matchsEnCours, matchsEnAttente, equipesReservees, bloqueParPriorite, matchsAppelables, matchsEnAttenteArrivee, pointageActif, estArrivee, matchPointe, equipesAttendues, pointer, annulerPointage, pointerEquipesVenues, terrainsLibres, terrainsFermes, terrainFerme, nbTerrainsOuverts, fermerTerrain, ouvrirTerrain, remplirTerrains, lancer, demarre, prochains, reporter, appelAutoActif,
     numero, numeroActuel, attenteRepos,
-    planifier, dureeMatch, dureeReglee, dureeSelonFormat, finEstimee, dureeEstimee, heureDuJour, texteHeure, lireHeure, heureFinSalle, depassementSalle, prioriser,
+    planifier, dureeMatch, dureeReglee, dureeSelonFormat, finEstimee, dureeEstimee, heureDuJour, texteHeure, lireHeure, heureFinSalle, depassementSalle, solutionsHoraires, prioriser,
     resultat, texteScore, verifierSet, verifierScore, enregistrerScore,
     setsForfait, enregistrerForfait, abandonEquipe, annulerAbandon, abandonAnnulable, effacerResultat,
     nomPoule, avecPoules, listePoules, taillesPoules, verifierPoules, verifierDeroulement, unMatchDePlus, maximumNecessaire,

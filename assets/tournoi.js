@@ -363,8 +363,23 @@
     return Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + String(m % 60).padStart(2, '0') : '');
   }
 
+  // Solutions pour finir avant la fin de la salle : calculées une fois par état des réglages, car le
+  // calcul rejoue le tournoi plusieurs fois.
+  let memoSolutions = { cle: null, liste: [] };
+  let solutionsAffichees = [];
+  function solutionsPour(tt) {
+    const cle = JSON.stringify([tt.reglages, tt.equipes.map((e) => e.id), tt.matchs.length]);
+    if (memoSolutions.cle !== cle) {
+      let liste = [];
+      try { liste = BT.solutionsHoraires(tt); } catch (err) { liste = []; }
+      memoSolutions = { cle, liste };
+    }
+    return memoSolutions.liste;
+  }
+
   // Estimation des horaires d'un tournoi pas encore commencé (réglages et carte « Tout est prêt »).
-  function texteHoraires(tt) {
+  // dansReglages : les solutions s'affichent avec un bouton pour les appliquer au formulaire.
+  function texteHoraires(tt, dansReglages) {
     const r = tt.reglages;
     const D = BT.dureeReglee(r);
     const auto = !(Number(r.dureePrevue) > 0);
@@ -387,8 +402,18 @@
     h += ', de ' + BT.texteHeure(r.heureDebut) + ' à ' + BT.heure(fin) + ' environ.</p>';
     const retard = BT.depassementSalle(tt, fin, debut);
     if (retard) {
-      h += '<p class="horaires-alerte">Ça dépasse la fin de la salle (' + BT.texteHeure(r.heureFin) + ') de ' + dureeTexte(retard * 60000) + '. '
-        + 'Pour gagner du temps, baisse le nombre de matchs par équipe ou de points par set, fixe une durée maximum par match, ou ajoute des terrains.</p>';
+      const solutions = solutionsPour(tt);
+      h += '<p class="horaires-alerte">Ça dépasse la fin de la salle (' + BT.texteHeure(r.heureFin) + ') de ' + dureeTexte(retard * 60000) + '.'
+        + (solutions.length ? '' : ' Pour gagner du temps, baisse le nombre de matchs par équipe ou de points par set, fixe une durée maximum par match, ou ajoute des terrains.') + '</p>';
+      if (solutions.length && dansReglages) {
+        solutionsAffichees = solutions;
+        h += '<p class="solutions-titre">Pour finir au moins 10 minutes avant, ' + (solutions.length > 1 ? 'au choix :' : 'tu peux choisir :') + '</p>'
+          + '<ul class="solutions-horaires">' + solutions.map((x, i) => '<li><span>' + esc(x.texte) + ' : fin vers <strong>' + BT.heure(x.fin) + '</strong></span>'
+            + '<button type="button" class="bouton petit" data-action="solution" data-index="' + i + '">Appliquer</button></li>').join('') + '</ul>';
+      } else if (solutions.length) {
+        h += '<p>' + pluriel(solutions.length, 'solution est proposée', 'solutions sont proposées') + ' dans les Réglages pour finir à temps.</p>'
+          + '<div class="actions"><button type="button" class="bouton petit" data-action="voir-solutions">Voir les solutions</button></div>';
+      }
     } else if (retard === 0) {
       const marge = Math.floor((BT.heureFinSalle(tt, debut) - fin) / 60000);
       h += '<p class="horaires-ok">Ça tient avant la fin de la salle (' + BT.texteHeure(r.heureFin) + ')' + (marge >= 1 ? ', avec ' + dureeTexte(marge * 60000) + ' de marge' : '') + '.</p>';
@@ -1154,7 +1179,15 @@
       + '<textarea id="r-regles" rows="4" maxlength="1500" placeholder="Par exemple, échauffement de 2 minutes avant chaque match">' + esc(r.reglesPerso || '') + '</textarea>'
       + '<span class="aide">Elles s’ajoutent aux règles écrites à partir des réglages, sur la page des équipes et dans l’onglet Règles.</span></div></section>'
       + '<section class="r-bloc"><div class="titre-actions"><h2>Équipes</h2>'
-      + (BT.demarre(t) ? '' : '<button type="button" class="bouton petit" data-action="melanger">Mélanger l’ordre des équipes</button>') + '</div>'
+      + (BT.demarre(t) ? '' : '<div class="titre-boutons"><button type="button" class="bouton petit" data-action="coller-liste" aria-expanded="false" aria-controls="r-coller">Coller une liste</button>'
+        + '<button type="button" class="bouton petit" data-action="melanger">Mélanger l’ordre des équipes</button></div>') + '</div>'
+      + (BT.demarre(t) ? '' : '<div class="champ coller-liste" id="r-coller" hidden>'
+        + '<label for="r-coller-texte">Colle ta liste, une équipe par ligne</label>'
+        + '<textarea id="r-coller-texte" rows="6" spellcheck="false" placeholder="Les Volants : Julien et Grégoire&#10;Les Smashs : Paul et Marie&#10;Les Amortis"></textarea>'
+        + '<span class="aide">Écris le nom de l’équipe, puis ses joueurs après « : » si tu les as. Une liste copiée d’un tableur marche aussi (nom dans la première colonne, joueurs dans les suivantes). Le nombre d’équipes s’ajuste à ta liste.</span>'
+        + '<div class="actions"><button type="button" class="bouton principal petit" data-action="coller-remplir">Remplir les équipes</button>'
+        + '<button type="button" class="bouton petit" data-action="coller-fermer">Annuler</button></div>'
+        + '<span class="erreur-champ" id="r-coller-erreur" role="alert" hidden></span></div>')
       + '<p class="note">Le nom des joueurs est facultatif, il s’affiche sur les terrains et sur la page de l’équipe. Changer un nom ne touche pas aux matchs.'
       + (t.matchs.length ? ' Si une équipe part avant la fin, « Abandon » lui fait perdre ses matchs restants par forfait.' : '') + '</p>'
       + '<span class="erreur-champ" id="r-equipes-erreur" hidden></span>'
@@ -1406,7 +1439,7 @@
             equipes: b.equipes.map((e, i) => ({ id: e.id || 'x' + i, nom: e.nom || '', joueurs: '' })) };
           BT.genererMatchs(tt);
         }
-        h = texteHoraires(tt);
+        h = texteHoraires(tt, true);
       }
     } catch (err) {
       h = '';
@@ -1429,6 +1462,7 @@
     }
     const v = cible.value;
     switch (cible.id) {
+      case 'r-coller-texte': $('#r-coller-erreur').hidden = true; return;
       case 'r-nom': b.nom = v; break;
       case 'r-equipes': {
         const n = BT.entier(v, 2, 64, null);
@@ -1487,6 +1521,46 @@
       case 'r-photos-max': { const m = BT.entier(v, 0, 99, null); if (m !== null) r.photosMax = m; break; }
     }
     majReglages();
+  }
+
+  // Applique une solution horaire au formulaire des réglages, comme si l'organisateur avait tapé les valeurs.
+  function appliquerSolution(solution) {
+    const b = brouillon;
+    const ch = solution.changements;
+    const poser = (selecteur, valeur) => {
+      const champ = $(selecteur);
+      if (!champ) return;
+      if (champ.type === 'checkbox') {
+        if (champ.checked === !!valeur) return;
+        champ.checked = !!valeur;
+        champ.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        champ.value = valeur;
+        champ.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      const bloc = champ.closest('.champ, .r-cat') || champ;
+      bloc.classList.remove('champ-applique');
+      void bloc.offsetWidth; // relance l'animation
+      bloc.classList.add('champ-applique');
+    };
+    if ('points' in ch) { b.plafondManuel = false; poser('#r-points', ch.points); }
+    if ('sets' in ch) poser('#r-sets', ch.sets);
+    if ('formatFinale' in ch) {
+      poser('#r-format-finale', true);
+      poser('#r-finale-sets', ch.finaleSets);
+      poser('#r-finale-points', ch.finalePoints);
+      poser('#r-finale-meilleur', ch.finaleAuMeilleur);
+    }
+    if ('dureeLimite' in ch) poser('#r-duree', ch.dureeLimite);
+    if (ch.cat) {
+      b.maxManuel[ch.cat.cle] = false;
+      poser('#r-cat-' + ch.cat.cle + '-tous', false);
+      poser('#r-cat-' + ch.cat.cle, ch.cat.k);
+    }
+    if ('nbPoules' in ch) poser('#r-poules', ch.nbPoules);
+    if ('terrains' in ch) poser('#r-terrains', ch.terrains);
+    if ('reposMin' in ch) poser('#r-repos', ch.reposMin);
+    $('#r-info').textContent = 'Changement appliqué : ' + solution.texte.charAt(0).toLowerCase() + solution.texte.slice(1) + '. Enregistre pour le garder.';
   }
 
   async function enregistrerReglages() {
@@ -1776,6 +1850,16 @@
       case 'onglet':
         changerOnglet(el.dataset.cible);
         break;
+      case 'voir-solutions':
+        changerOnglet('reglages');
+        // L'estimation des réglages s'affiche un instant après (calcul différé).
+        setTimeout(() => { const zone = $('#r-horaires'); if (zone) zone.scrollIntoView({ block: 'center' }); }, 350);
+        break;
+      case 'solution': {
+        const solution = solutionsAffichees[Number(el.dataset.index)];
+        if (solution && brouillon) appliquerSolution(solution);
+        break;
+      }
       case 'lancer':
         agir((tt) => { BT.remplirTerrains(tt); return true; });
         break;
@@ -1901,6 +1985,47 @@
         if (confirm('Annuler l’abandon de l’équipe « ' + BT.nomEquipe(t, equipeId) + ' » ? Ses matchs perdus par forfait à cause de l’abandon redeviendront à jouer.')) {
           agir((tt) => BT.annulerAbandon(tt, equipeId)).then(() => { if (brouillon) rendreListeEquipes(); });
         }
+        break;
+      }
+      case 'coller-liste':
+      case 'coller-fermer': {
+        const zone = $('#r-coller');
+        if (!zone) break;
+        const ouvrir = el.dataset.action === 'coller-liste' && zone.hidden;
+        zone.hidden = !ouvrir;
+        const bouton = document.querySelector('[data-action="coller-liste"]');
+        if (bouton) bouton.setAttribute('aria-expanded', String(ouvrir));
+        $('#r-coller-erreur').hidden = true;
+        if (ouvrir) $('#r-coller-texte').focus();
+        else if (bouton) bouton.focus();
+        break;
+      }
+      case 'coller-remplir': {
+        const lues = BT.lireListeEquipes($('#r-coller-texte').value);
+        const erreur = $('#r-coller-erreur');
+        if (lues.length < 2) {
+          erreur.textContent = lues.length ? 'Il faut au moins deux équipes : mets une équipe par ligne.' : 'Colle d’abord ta liste, une équipe par ligne.';
+          erreur.hidden = false;
+          break;
+        }
+        const retenues = lues.slice(0, 64);
+        changerNbEquipes(retenues.length);
+        retenues.forEach((x, i) => {
+          brouillon.equipes[i].nom = x.nom || 'Équipe ' + (i + 1);
+          brouillon.equipes[i].joueurs = x.joueurs;
+        });
+        brouillonModifie = true;
+        $('#r-equipes').value = retenues.length;
+        rendreListeEquipes();
+        verifierNoms();
+        majReglages();
+        $('#r-coller').hidden = true;
+        $('#r-coller-texte').value = '';
+        const bouton = document.querySelector('[data-action="coller-liste"]');
+        if (bouton) bouton.setAttribute('aria-expanded', 'false');
+        $('#r-info').textContent = pluriel(retenues.length, 'équipe remplie', 'équipes remplies') + ' d’après ta liste'
+          + (lues.length > 64 ? ' (64 au plus, les suivantes sont ignorées)' : '') + '. Vérifie les noms, puis enregistre.';
+        $('#r-liste-equipes').scrollIntoView({ block: 'start', behavior: 'smooth' });
         break;
       }
       case 'melanger': {
