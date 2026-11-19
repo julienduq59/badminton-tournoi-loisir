@@ -170,7 +170,7 @@
     async signalerArrivee(id, equipeId) {
       await local.modifier(id, (t) => {
         if (!BT.pointer(t, equipeId)) return false;
-        if (BT.appelAutoActif(t) && BT.demarre(t)) BT.remplirTerrains(t);
+        BT.apresPointage(t);
         return true;
       });
       return 'pointee';
@@ -475,7 +475,7 @@
       if (enLigne.estOrganisateur(id) && await enLigne.assurerOrganisateur(id).catch(() => false)) {
         await enLigne.modifier(id, (t) => {
           if (!BT.pointer(t, equipeId)) return false;
-          if (BT.appelAutoActif(t) && BT.demarre(t)) BT.remplirTerrains(t);
+          BT.apresPointage(t);
           return true;
         });
         return 'pointee';

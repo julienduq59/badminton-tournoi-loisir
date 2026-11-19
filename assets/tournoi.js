@@ -262,7 +262,7 @@
   // Pointe une équipe, puis remplit les terrains libres si l'appel automatique tourne.
   function pointerEquipe(tt, equipeId, quand) {
     if (!BT.pointer(tt, equipeId, quand)) return false;
-    if (BT.appelAutoActif(tt) && BT.demarre(tt)) BT.remplirTerrains(tt);
+    BT.apresPointage(tt);
     return true;
   }
 
@@ -344,7 +344,7 @@
   }
 
   function progression() {
-    const total = t.matchs.length;
+    const total = BT.nbMatchsPrevus(t);
     const faits = t.matchs.filter((m) => m.statut === 'termine').length;
     const pct = total ? Math.round((faits / total) * 100) : 0;
     const fin = faits < total ? BT.finEstimee(t) : null;
@@ -361,6 +361,19 @@
     const m = Math.max(1, Math.round(ms / 60000));
     if (m < 60) return m + ' min';
     return Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + String(m % 60).padStart(2, '0') : '');
+  }
+
+  // Gagnants contre gagnants : les deux équipes libres que l'organisateur peut faire jouer quand même.
+  let paireSuisse = null;
+  const texteVictoires = (v) => String(v).replace('.', ',') + ' victoire' + (v > 1 ? 's' : '');
+  // « Lancer quand même A contre B », en signalant une revanche (sur deux lignes dans la carte d'un terrain).
+  function boutonForcer(terrain, carte) {
+    const [a, b] = paireSuisse;
+    const revanche = t.matchs.some((m) => m.phase !== 'finale' && ((m.a === a && m.b === b) || (m.a === b && m.b === a)));
+    const paire = esc(BT.nomEquipe(t, a)) + ' contre ' + esc(BT.nomEquipe(t, b)) + (revanche ? ' (déjà rencontrées)' : '');
+    return carte
+      ? '<button type="button" class="bouton bouton--deux-lignes" data-action="forcer-suisse" data-terrain="' + terrain + '">Lancer quand même<small>' + paire + '</small></button>'
+      : '<button type="button" class="bouton" data-action="forcer-suisse" data-terrain="' + terrain + '">Lancer quand même ' + paire + '</button>';
   }
 
   // Solutions pour finir avant la fin de la salle : calculées une fois par état des réglages, car le
@@ -462,9 +475,10 @@
           + '<button type="button" class="bouton" data-action="reporter" data-id="' + m.id + '">Reporter</button>';
       }
       return '<article class="terrain' + (liste.length ? ' terrain--recu' : '') + '">'
-        + '<div class="terrain-tete"><span>Terrain ' + n + '</span><span class="num-match">' + libelles(m) + 'Match ' + BT.numero(t, m) + '</span></div>'
+        + '<div class="terrain-tete"><span>Terrain ' + n + '</span><span class="num-match">' + (BT.estSuisse(t) && m.phase !== 'finale' ? (BT.categorieMatch(t, m) ? esc(BT.categorieMatch(t, m)) + ' · ' : '') : libelles(m)) + 'Match ' + BT.numero(t, m) + '</span></div>'
         + '<div class="court"><div class="court-cote">' + nomComplet(m.a) + '</div><div class="court-filet"></div>'
         + '<div class="court-cote">' + nomComplet(m.b) + '</div></div>'
+        + (BT.estSuisse(t) && m.phase !== 'finale' && BT.etiquetteMatch(t, m) ? '<div class="terrain-niveau">' + esc(BT.etiquetteMatch(t, m)) + '</div>' : '')
         + '<div class="terrain-depuis">Commencé à ' + BT.heure(m.debut) + ', ' + chronoHtml(m.debut, BT.formatMatch(t, m).dureeLimite) + '</div>'
         + (BT.terrainFerme(t, n) ? '<div class="terrain-ferme-info">Terrain fermé après ce match</div>' : '')
         + recu
@@ -477,15 +491,22 @@
         + '<div class="terrain-pied"><button type="button" class="bouton" data-action="ouvrir-terrain" data-terrain="' + n + '">Rouvrir le terrain</button></div></article>';
     }
     let texte = 'Terrain libre';
+    // Gagnants contre gagnants : pas de match prêt, des équipes attendent encore leurs matchs.
+    const suisseEnAttente = BT.estSuisse(t) && !t.finale && !BT.matchsEnAttente(t).length && !BT.suisseFini(t);
     if (st === 'pret') texte = 'En attente du lancement';
     else if (n > t.reglages.terrains) texte = 'Terrain retiré';
+    else if (suisseEnAttente) {
+      texte = !paireSuisse ? 'Les équipes qui restent jouent encore'
+        : Number(t.reglages.ecartSuisse) ? 'Pas d’adversaire assez proche en victoires pour l’instant' : 'Pas d’adversaire au même nombre de victoires pour l’instant';
+    }
     else if (!BT.matchsEnAttente(t).length) texte = 'Plus de match à appeler';
     else if (!appelPossible) texte = attendPriorite ? 'En attente du match prioritaire' : attendArrivee ? 'Équipes pas encore arrivées' : 'Les équipes restantes jouent déjà';
     else if (seulementReportes) texte = 'Match reporté : appelle-le quand ses équipes sont prêtes';
     else if (BT.attenteRepos(t) > 0 && BT.appelAutoActif(t)) texte = 'Repos des équipes, appel dans ' + Math.max(1, Math.ceil(BT.attenteRepos(t) / 60000)) + ' min';
-    const bouton = st === 'en_cours' && appelPossible && n <= t.reglages.terrains
+    let bouton = st === 'en_cours' && appelPossible && n <= t.reglages.terrains
       ? '<button type="button" class="bouton" data-action="appeler" data-terrain="' + n + '">Appeler le match suivant</button>'
       : '';
+    if (!bouton && suisseEnAttente && paireSuisse && st === 'en_cours' && n <= t.reglages.terrains) bouton = boutonForcer(n, true);
     return '<article class="terrain">'
       + '<div class="terrain-tete"><span>Terrain ' + n + '</span></div>'
       + '<div class="court court--libre"><div class="court-libre-texte">' + texte + '</div><div class="court-filet"></div></div>'
@@ -574,6 +595,7 @@
     const suite = BT.prochains(t);
     const T = BT.nbTerrainsOuverts(t);
     const recus = aValider();
+    paireSuisse = BT.estSuisse(t) && st === 'en_cours' ? BT.paireForcee(t) : null;
     let h = progression();
 
     if (t.pause) {
@@ -594,7 +616,8 @@
       const premiers = premiersAppels();
       const pointage = BT.pointageActif(t);
       h += '<div class="carte"><h2>Tout est prêt</h2>'
-        + '<p>' + pluriel(t.matchs.length, 'match', 'matchs') + ' à jouer sur ' + pluriel(T, 'terrain') + '. '
+        + '<p>' + pluriel(BT.nbMatchsPrevus(t), 'match', 'matchs') + ' à jouer sur ' + pluriel(T, 'terrain') + '. '
+        + (BT.estSuisse(t) ? 'Les gagnants jouent contre les gagnants : les premiers matchs suivent l’ordre de la liste, les suivants se créent au fil des résultats. ' : '')
         + (pointage && !premiers
           ? 'Aucun match ne peut encore être appelé : pointe d’abord les équipes arrivées.'
           : 'Au lancement, ' + (premiers > 1 ? 'les ' + premiers + ' premiers matchs sont appelés' : 'le premier match est appelé')
@@ -605,7 +628,7 @@
     }
     if (!t.finale && BT.nbQualifies(t) >= 2 && BT.phasePoulesFinie(t)) {
       const q = BT.qualifies(t);
-      h += '<div class="carte carte-finale"><h2>' + (BT.avecPoules(t) ? 'Phase de poules terminée' : 'Championnat terminé') + '</h2>'
+      h += '<div class="carte carte-finale"><h2>' + (BT.avecPoules(t) ? 'Phase de poules terminée' : BT.estSuisse(t) ? 'Tous les matchs sont joués' : 'Championnat terminé') + '</h2>'
         + '<p>Voici les équipes qualifiées pour la phase finale, de la tête de série 1 à ' + q.length + '. Vérifie le classement avant de lancer.</p>'
         + '<ol class="liste-qualifies">' + q.map((x) => '<li>' + esc(x.equipe.nom)
           + (x.poule != null ? ' <small>' + BT.nomPoule(x.poule) + ', ' + (x.place === 1 ? '1re' : x.place + 'e') + '</small>' : '') + '</li>').join('') + '</ol>'
@@ -630,6 +653,15 @@
         + '</div></div></div>'
         + '<div class="grille-terrains">'
         + numerosTerrains().map((n) => carteTerrain(n, BT.matchsEnCours(t).find((m) => m.terrain === n), st, appelPossible, attendArrivee, attendPriorite, seulementReportes)).join('')
+        + '</div>';
+    }
+    const sansAdversaire = BT.estSuisse(t) && st !== 'termine' ? BT.equipesSansAdversaire(t) : [];
+    if (sansAdversaire.length && BT.demarre(t)) {
+      h += '<div class="carte carte-suisse"><h2>En attente d’un adversaire</h2>'
+        + '<p>' + sansAdversaire.map((x) => nom(x.equipe) + ' <small>(' + texteVictoires(x.victoires) + ')</small>').join(', ') + '.</p>'
+        + '<p class="note">Chaque équipe libre attend une équipe libre ' + (Number(t.reglages.ecartSuisse) ? 'à ' + (Number(t.reglages.ecartSuisse) === 1 ? 'une victoire' : t.reglages.ecartSuisse + ' victoires') + ' d’écart au plus' : 'au même nombre de victoires')
+        + ', qu’elle n’a pas encore rencontrée. Les matchs se créent dès qu’une équipe se libère.</p>'
+        + (paireSuisse && libres.length ? '<div class="actions">' + boutonForcer(libres[0]) + '</div>' : '')
         + '</div>';
     }
     if (suite.length) {
@@ -726,6 +758,12 @@
       + '<select id="filtre-equipe" aria-label="Filtrer par équipe"><option value="">Toutes les équipes</option>'
       + t.equipes.map((e) => '<option value="' + esc(e.id) + '"' + (e.id === filtreEquipe ? ' selected' : '') + '>' + esc(e.nom) + '</option>').join('')
       + '</select></div>';
+    // Gagnants contre gagnants : les matchs suivants n'existent pas encore.
+    const aCreer = BT.matchsSuisseRestants(t);
+    if (aCreer) {
+      h += '<p class="note note-suisse">' + pluriel(aCreer, 'match sera créé', 'matchs seront créés') + ' au fil des résultats : chaque équipe libre joue une équipe libre qui a '
+        + esc(BT.texteEcartSuisse(t.reglages)) + ', et qu’elle n’a pas encore rencontrée.</p>';
+    }
     const libres = BT.terrainsLibres(t);
     const occupees = equipesOccupees();
     groupes.forEach((g) => {
@@ -739,7 +777,7 @@
   /* ---------- Onglet Classement ---------- */
 
   function tableClassement(lignes, nuls, qualifiees) {
-    return '<div class="tableau-conteneur"><table class="tableau"><thead><tr>'
+    return '<div class="tableau-conteneur" tabindex="0" role="region" aria-label="Classement"><table class="tableau"><thead><tr>'
       + '<th>Rang</th><th class="equipe">Équipe</th><th><abbr title="Matchs joués">J</abbr></th><th><abbr title="Victoires">V</abbr></th>'
       + (nuls ? '<th><abbr title="Matchs nuls">N</abbr></th>' : '')
       + '<th><abbr title="Défaites">D</abbr></th><th>Sets</th><th>Points</th></tr></thead><tbody>'
@@ -764,7 +802,7 @@
     let h = '';
     if (cf) {
       h += '<h2>Résultats finaux</h2>' + BT.podiumHtml(cf)
-        + '<div class="tableau-conteneur"><table class="tableau"><thead><tr><th>Rang</th><th class="equipe">Équipe</th>'
+        + '<div class="tableau-conteneur" tabindex="0" role="region" aria-label="Classement"><table class="tableau"><thead><tr><th>Rang</th><th class="equipe">Équipe</th>'
         + (t.finale ? '<th class="equipe">Parcours</th>' : '<th><abbr title="Victoires">V</abbr></th><th><abbr title="Défaites">D</abbr></th>') + '</tr></thead><tbody>'
         + cf.map((l) => '<tr><td class="rang">' + (l.rang || '') + '</td><td class="equipe">' + esc(l.equipe.nom) + '</td>'
           + (t.finale ? '<td class="equipe">' + esc(l.etape || '') + '</td>' : '<td class="fort">' + l.V + '</td><td>' + l.D + '</td>') + '</tr>').join('')
@@ -772,7 +810,7 @@
     }
     if (t.finale) {
       const annulable = !t.matchs.some((m) => m.phase === 'finale' && m.statut !== 'attente' && !m.forfait);
-      h += '<h2>Phase finale</h2><div class="tableau-defilant">' + BT.tableauHtml(t) + '</div>'
+      h += '<h2>Phase finale</h2><div class="tableau-defilant" tabindex="0" role="region" aria-label="Tableau de la phase finale">' + BT.tableauHtml(t) + '</div>'
         + (annulable ? '<div class="actions pas-imprimer" style="margin-top:10px"><button type="button" class="bouton petit danger" data-action="annuler-finale">Annuler la phase finale</button></div>' : '');
     }
     const qualifiees = new Set(BT.nbQualifies(t) >= 2 ? BT.qualifies(t).map((x) => x.equipe.id) : []);
@@ -781,7 +819,7 @@
         h += '<h2>' + p.nom + '</h2>' + tableClassement(BT.classement(t, p.numero), nuls, qualifiees);
       });
     } else {
-      h += (cf || t.finale ? '<h2>Championnat</h2>' : '') + tableClassement(BT.classement(t), nuls, qualifiees);
+      h += (cf || t.finale ? '<h2>' + (BT.estSuisse(t) ? 'Avant la phase finale' : 'Championnat') + '</h2>' : '') + tableClassement(BT.classement(t), nuls, qualifiees);
     }
     h += '<p class="note" style="margin-top:12px">Classement au nombre de victoires'
       + (nuls ? ' (un match nul compte pour une demi-victoire)' : '')
@@ -1085,26 +1123,39 @@
       // Le tournoi
       + '<section class="r-bloc"><h2>Le tournoi</h2><div class="r-grille">'
       + '<div class="champ champ--large"><label for="r-nom">Nom du tournoi</label><input type="text" id="r-nom" maxlength="60" value="' + esc(b.nom) + '"></div>'
-      + '<div class="champ champ--plein-tel"><label for="r-format">Organisation</label>'
-      + '<select id="r-format"><option value="championnat"' + (r.format !== 'poules' ? ' selected' : '') + '>Une seule poule</option>'
-      + '<option value="poules"' + (r.format === 'poules' ? ' selected' : '') + '>Plusieurs poules</option></select></div>'
+      + '<div class="champ champ--large"><label for="r-format">Organisation</label>'
+      + '<select id="r-format"><option value="championnat"' + (r.format !== 'poules' && r.format !== 'suisse' ? ' selected' : '') + '>Une seule poule</option>'
+      + '<option value="poules"' + (r.format === 'poules' ? ' selected' : '') + '>Plusieurs poules</option>'
+      + '<option value="suisse"' + (r.format === 'suisse' ? ' selected' : '') + '>Gagnants contre gagnants</option></select>'
+      + '<span class="aide" id="r-format-aide"></span></div>'
       + '<div class="champ"><label for="r-equipes">Nombre d’équipes</label>' + nombre('r-equipes', b.equipes.length, 2, 64) + '</div>'
       + '<div class="champ" id="r-poules-bloc"><label for="r-poules">Nombre de poules</label>' + nombre('r-poules', r.nbPoules, 2, 8)
       + '<span class="aide" id="r-poules-aide"></span></div>'
       + '</div></section>'
       // Matchs de chaque équipe
       + '<section class="r-bloc"><h2>Matchs de chaque équipe</h2>'
+      // Gagnants contre gagnants (système suisse)
+      + '<div id="r-suisse" class="r-suisse"><div class="r-grille">'
+      + '<div class="champ"><label for="r-suisse-matchs">Matchs par équipe</label>' + nombre('r-suisse-matchs', Number(r.matchsSuisse) || 5, 1, 63) + '</div>'
+      + '<div class="champ"><label for="r-suisse-cat">Type de matchs</label><select id="r-suisse-cat">'
+      + BT.CATEGORIES.map((c) => '<option value="' + c.cle + '"' + ((r.categorieSuisse || 'double') === c.cle ? ' selected' : '') + '>' + c.pluriel.charAt(0).toUpperCase() + c.pluriel.slice(1) + '</option>').join('')
+      + '</select></div>'
+      + '<div class="champ champ--plein-tel"><label for="r-suisse-ecart">Écart de victoires accepté</label>'
+      + avecUnite(nombre('r-suisse-ecart', Number(r.ecartSuisse) || 0, 0, 5), 'victoire' + ((Number(r.ecartSuisse) || 0) > 1 ? 's' : '')) + '</div>'
+      + '</div><p class="note r-note" id="r-suisse-aide"></p></div>'
+      + '<div id="r-classique">'
       + caseHtml('r-mixte-double', r.mixteEgalDouble, 'Mixte compté comme double (pas de différence entre mixte et double)')
       + '<div class="r-categories">'
       + BT.CATEGORIES.map((c) => {
         const x = r.cat[c.cle] || { k: 0, tous: false };
-        return '<div class="r-cat" id="r-cat-' + c.cle + '-bloc"><span class="r-cat-nom" id="r-cat-' + c.cle + '-label">' + c.pluriel.charAt(0).toUpperCase() + c.pluriel.slice(1) + '</span>'
+        return '<div class="r-cat" id="r-cat-' + c.cle + '-bloc" role="group" aria-labelledby="r-cat-' + c.cle + '-label"><span class="r-cat-nom" id="r-cat-' + c.cle + '-label">' + c.pluriel.charAt(0).toUpperCase() + c.pluriel.slice(1) + '</span>'
           + '<label class="r-mini"><span>Au moins</span>' + nombre('r-cat-' + c.cle, x.k || 0, 0, 63) + '</label>'
           + '<label class="r-mini"><span>Au plus</span>' + nombre('r-cat-' + c.cle + '-max', Math.max(Number(x.max) || 0, x.k || 0), 0, 63) + '</label>'
           + caseHtml('r-cat-' + c.cle + '-tous', x.tous, '') + '</div>';
       }).join('')
       + '</div>'
       + '<p class="note r-note">Le site prévoit le minimum pour chaque équipe. Avec un nombre impair d’équipes, une équipe joue un match de plus, sans dépasser le maximum.</p>'
+      + '</div>'
       + '<p class="erreur-champ" id="r-matchs-erreur" hidden></p>'
       + '</section>'
       // Format des matchs
@@ -1276,6 +1327,11 @@
     if (!tournoi.matchs.length || brouillon.equipes.length !== tournoi.equipes.length) return true;
     if ((r.format || 'championnat') !== (avant.format || 'championnat')) return true;
     if (r.format === 'poules' && r.nbPoules !== avant.nbPoules) return true;
+    // Gagnants contre gagnants : le nombre de matchs et l'écart s'appliquent aux matchs suivants.
+    if (r.format === 'suisse') {
+      if ((r.categorieSuisse || 'double') !== (avant.categorieSuisse || 'double')) return true;
+      return brouillon.equipes.some((e, i) => e.id !== tournoi.equipes[i].id);
+    }
     if (JSON.stringify(BT.categoriesJouees(r)) !== JSON.stringify(BT.categoriesJouees(avant))) return true;
     return brouillon.equipes.some((e, i) => e.id !== tournoi.equipes[i].id);
   }
@@ -1313,6 +1369,21 @@
     const r = b.reglages;
     const n = b.equipes.length;
     const poules = r.format === 'poules';
+    const suisse = r.format === 'suisse';
+    // Gagnants contre gagnants : matchs créés au fil des résultats
+    $('#r-suisse').hidden = !suisse;
+    $('#r-classique').hidden = suisse;
+    $('#r-suisse-matchs').max = Math.max(1, n - 1);
+    const ecart = Number(r.ecartSuisse) || 0;
+    const uniteEcart = $('#r-suisse-ecart') && $('#r-suisse-ecart').nextElementSibling;
+    if (uniteEcart) uniteEcart.textContent = ecart > 1 ? 'victoires' : 'victoire';
+    $('#r-suisse-aide').textContent = 'Dès qu’une équipe est libre, elle joue une équipe libre qui a '
+      + (ecart ? 'le même nombre de victoires, ou ' + (ecart === 1 ? 'une victoire' : ecart + ' victoires') + ' d’écart au plus' : 'exactement le même nombre de victoires')
+      + ', et qu’elle n’a pas encore rencontrée. Au départ, les équipes jouent dans l’ordre de la liste'
+      + (r.pointage ? ', ou dans l’ordre d’arrivée avec le pointage' : '') + '. Si aucune équipe ne convient, tu peux lancer un match quand même dans l’onglet Terrains.'
+      + (ecart === 0 ? ' Sans écart, les terrains attendent plus souvent.' : '');
+    $('#r-format-aide').textContent = suisse ? 'Les gagnants jouent contre les gagnants, les matchs se créent au fil des résultats.' : '';
+    $('#r-format-aide').hidden = !suisse;
     // Catégories : nombre de matchs par équipe, ou contre toutes les autres
     BT.CATEGORIES.forEach((c) => {
       const x = r.cat[c.cle];
@@ -1344,9 +1415,10 @@
     $('#r-finale').hidden = poules;
     $('#r-qualifies').hidden = !poules;
     $('#r-finale-label').textContent = poules ? 'Qualifiés par poule' : 'Qualifiés';
+    $('#r-finale-label').htmlFor = poules ? 'r-qualifies' : 'r-finale';
     $('#r-finale').querySelectorAll('option').forEach((o) => { o.disabled = Number(o.value) > n; });
     const Q = poules ? (r.qualifiesParPoule > 0 ? r.qualifiesParPoule * r.nbPoules : 0) : Number(r.phaseFinale) || 0;
-    let aideFinale = poules ? '0 si le classement des poules suffit.' : 'Le classement final est celui du championnat.';
+    let aideFinale = poules ? '0 si le classement des poules suffit.' : suisse ? 'Sans phase finale, le classement après tous les matchs est le classement final.' : 'Le classement final est celui du championnat.';
     if (Q >= 2) {
       let S = 2;
       while (S < Q) S *= 2;
@@ -1471,7 +1543,10 @@
       }
       case 'r-mixte-double': r.mixteEgalDouble = cible.checked; break;
       case 'r-finale-cat': r.finaleCategorie = v; break;
-      case 'r-format': r.format = v === 'poules' ? 'poules' : 'championnat'; break;
+      case 'r-format': r.format = v === 'poules' || v === 'suisse' ? v : 'championnat'; break;
+      case 'r-suisse-matchs': { const k = BT.entier(v, 1, 63, null); if (k) r.matchsSuisse = k; break; }
+      case 'r-suisse-cat': r.categorieSuisse = BT.CATEGORIES.some((c) => c.cle === v) ? v : 'double'; break;
+      case 'r-suisse-ecart': { const d = BT.entier(v, 0, 5, null); if (d !== null) r.ecartSuisse = d; break; }
       case 'r-poules': { const p = BT.entier(v, 2, 8, null); if (p) r.nbPoules = p; break; }
       case 'r-finale': r.phaseFinale = BT.entier(v, 0, 16, 0); break;
       case 'r-qualifies': { const q = BT.entier(v, 0, 8, null); if (q !== null) r.qualifiesParPoule = q; break; }
@@ -1606,6 +1681,8 @@
       if (recreer) BT.genererMatchs(tt);
       else {
         if (tt.finale) BT.avancerTableau(tt);
+        // Gagnants contre gagnants : un nouvel écart ou un autre nombre de matchs peut créer des matchs.
+        if (BT.estSuisse(tt)) BT.apparierSuisse(tt);
         if (BT.appelAutoActif(tt) && BT.demarre(tt)) BT.remplirTerrains(tt);
       }
       return true;
@@ -1850,6 +1927,19 @@
       case 'onglet':
         changerOnglet(el.dataset.cible);
         break;
+      case 'forcer-suisse': {
+        const voulu = Number(el.dataset.terrain);
+        agir((tt) => {
+          const libresTt = BT.terrainsLibres(tt);
+          const terrain = libresTt.includes(voulu) ? voulu : libresTt[0];
+          if (!terrain) return false;
+          const m = BT.forcerMatchSuisse(tt);
+          if (!m) return false;
+          BT.lancer(tt, m, terrain);
+          return true;
+        });
+        break;
+      }
       case 'voir-solutions':
         changerOnglet('reglages');
         // L'estimation des réglages s'affiche un instant après (calcul différé).
@@ -1908,7 +1998,7 @@
         agir((tt) => {
           const attendues = BT.equipesAttendues(tt).map((e) => e.id);
           attendues.forEach((x) => BT.pointer(tt, x));
-          if (attendues.length && BT.appelAutoActif(tt) && BT.demarre(tt)) BT.remplirTerrains(tt);
+          if (attendues.length) BT.apresPointage(tt);
           return attendues.length > 0;
         });
         break;
@@ -1937,7 +2027,7 @@
         if (!confirm('Annuler le pointage de « ' + BT.nomEquipe(t, equipeId) + ' » ? Ses matchs ne seront plus appelés tant qu’elle n’est pas pointée.')) break;
         D.retirerArrivee(id, equipeId).catch(() => {}).then(() => agir((tt) => {
           if (!BT.annulerPointage(tt, equipeId)) return false;
-          if (BT.appelAutoActif(tt) && BT.demarre(tt)) BT.remplirTerrains(tt);
+          BT.apresPointage(tt);
           return true;
         }));
         break;

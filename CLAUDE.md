@@ -69,6 +69,29 @@ commandes, commits et textes du site.
   convertis par `normaliser` (tout en double). Une équipe ne joue qu'un match à la fois.
 - Poules (`reglages.format = 'poules'`) : répartition en serpentin (`repartirPoules`), champ `poule`
   sur les équipes et les matchs, tous contre tous dans chaque poule.
+- Gagnants contre gagnants (`reglages.format = 'suisse'`, système suisse demandé par Julien) : réglages
+  `matchsSuisse` (matchs par équipe, au plus n - 1), `ecartSuisse` (écart de victoires accepté, 1 par
+  défaut : avec 0, les terrains restent vides faute d'adversaire environ 7 % du temps, 3 % avec 1) et
+  `categorieSuisse`. Pas de tours : `genererMatchs` crée les premiers matchs dans l'ordre de la liste,
+  puis `apparierSuisse(t)` crée les suivants au fil des résultats (appelée par `remplirTerrains`,
+  `enregistrerScore`, `effacerResultat`, `abandonEquipe`, `annulerAbandon`, `apresPointage` et
+  l'enregistrement des réglages). Une équipe libre (ni sur un terrain ni dans un match à jouer, pointée,
+  moins de `matchsSuisse` matchs créés) rencontre une équipe libre au même nombre de victoires (nul =
+  moitié), sinon dans l'écart accepté, jamais une équipe déjà rencontrée (`meilleurePaire` : plus petit
+  écart, puis l'équipe qui a le moins joué, puis celle qui attend depuis le plus longtemps). Garde de
+  fin de tournoi : pas de paire qui priverait une équipe en retard de ses derniers adversaires possibles.
+  Plus rien en cours ni appelable : les plus proches jouent quand même (`plusProches`, une revanche
+  plutôt qu'un match en plus ; pas de revanche tant que des équipes ne sont pas arrivées). À la fin, une
+  seule équipe incomplète joue une équipe qui a fini (match en plus, si n × matchs est impair). Pointage :
+  `reorganiserArrivees` fait jouer ensemble les équipes arrivées (matchs encore modifiables :
+  `apparieModifiable`, jamais appelés ni forcés, prioritaires ou reportés). Correction qui change le
+  vainqueur, effacement, abandon : `defaireAppariements` retire les matchs modifiables de ces équipes
+  (au moins un match reste toujours). Matchs suisses : `victoires` (bilans à la création, étiquette
+  « Équipes à 2 victoires »), `force` (« Lancer quand même » : `paireForcee`, `forcerMatchSuisse`, carte
+  « En attente d'un adversaire » et terrain libre de l'onglet Terrains, « (déjà rencontrées) » pour une
+  revanche). `matchsSuisseRestants`, `suisseFini` (dans `statut` et `phasePoulesFinie`), `nbMatchsPrevus`
+  (progression), `dureeSuisseRestante` (estimations), `matchsSuisseAVenir` (téléphone : « Adversaire
+  bientôt choisi »). Phase finale possible ensuite, comme le championnat.
 - Phase finale : `t.finale = { taille, places }` (places dans l'ordre du tableau, '' = case vide /
   exempt), matchs avec `phase: 'finale'`, `tour`, `slot`, `petite` (3e place). `avancerTableau()`
   crée ou corrige les matchs suivants à chaque résultat (un match pas terminé suit toujours le
@@ -98,6 +121,12 @@ commandes, commits et textes du site.
   `dureeEstimee(t, D)` simule tout le tournoi (phase finale comprise, durée mise à l'échelle de son
   format), `depassementSalle()` compare à `heureFinSalle()` (première heure de fin après le premier
   match lancé, sinon après l'heure de début). Avant le lancement, `planifier` part de l'heure de début si elle est à venir.
+  La durée prévue ne dépasse pas la durée maximum. Dépassement de la salle : `solutionsHoraires(t)`
+  calcule des changements qui font finir au moins 10 minutes avant (moins de points, un seul set, durée
+  maximum avec phase finale sans limite de temps, moins de matchs par dichotomie, une poule de plus,
+  terrains, repos, sinon un format court avec moins de matchs), affichés dans les Réglages avec
+  « Appliquer » (`appliquerSolution` remplit le formulaire) et signalés par « Voir les solutions » sur la
+  carte « Tout est prêt ». Calcul mis en cache par état des réglages (`solutionsPour`).
 - Terrains fermés : `t.fermes` (numéros), `fermerTerrain` / `ouvrirTerrain`, exclus de `terrainsLibres`,
   `planifier` et `finEstimee` comptent `nbTerrainsOuverts(t)`. Un match en cours finit sur un terrain fermé.
 - Règles du tournoi : `reglesTournoi(t)` les écrit à partir des réglages seuls (rien d'autre que ce que
@@ -139,7 +168,10 @@ commandes, commits et textes du site.
   (`brouillonModifie`). Réglages en blocs (`.r-bloc`, grille `.r-grille` de 4 colonnes égales, 2 sur
   téléphone, `champ--plein-tel` pour les listes), unité dans le champ (`.avec-unite`), bouton
   Enregistrer collé en bas de l'écran. Lien organisateur : la preuve est toujours écrite (la base vérifie la clé) et
-  l'entrée d'avant est remise en cas d'échec.
+  l'entrée d'avant est remise en cas d'échec. « Coller une liste » (partie Équipes, avant le lancement) :
+  `lireListeEquipes` lit une équipe par ligne (« Nom : joueurs », tiret entouré d'espaces, « ; »,
+  parenthèses, colonnes d'un tableur, numéros, puces et ligne d'en-tête retirés, « 19:00 » gardé) et
+  le nombre d'équipes s'ajuste.
 - Écran : 2 rangées de terrains jusqu'à 10, présentation compacte au-delà de 12 ; classement en 2 ou
   3 colonnes avec taille de texte selon le nombre de lignes ; tableau de phase finale réduit pour tenir.
   Annonce vocale (bouton « Annonce vocale », clé locale `badminton:voix-ecran`, synthèse vocale du
@@ -148,7 +180,15 @@ commandes, commits et textes du site.
   phase finale), ainsi que le message de l'organisation et la mise en pause quand ils changent. Le
   navigateur ne parle qu'après un clic : après un rechargement, « Cliquer pour réactiver la voix ».
   Boutons de commande (voix, son, plein écran) dans la barre du haut (`commandesHtml`, redessinés avec
-  elle, un seul écouteur de clics), affichés quand la souris bouge ou qu'un clic est attendu.
+  elle, un seul écouteur de clics), affichés quand la souris bouge, au clavier ou qu'un clic est attendu.
+  Noms longs : `ajusterCotes` masque les joueurs puis réduit le texte d'un côté de terrain jusqu'à tenir ;
+  liste « Ensuite » sur deux lignes (`e-eq--deux`) quand l'adversaire serait coupé, titre retiré si vide.
+- Accessibilité (relecture axe-core du 19/11/2026) : boutons d'ajout de fichier en `<button data-fichier>`
+  (pas d'étiquette), onglets du téléphone en `aria-current="page"`, messages de score en `role="alert"`
+  et focus remis dans le formulaire (`focusEnvoi`), tableaux défilants en `tabindex="0" role="region"`,
+  anneau de focus vert foncé (jaune sur les fonds sombres), contrastes revus (titre du match en cours,
+  joueurs sur les terrains, pastilles de catégorie de l'écran). Récap : le nom d'équipe rapetisse pour
+  tenir en deux lignes.
 - Cases de score (téléphone et dialogue organisateur) : `type="text"` + `inputmode="numeric"`,
   2 chiffres au plus (`chiffresScore`), case rouge et phrase au-delà de `maxPointsSet(reg)` (points sans
   écart, sinon score maximum), passage à la case suivante après 2 chiffres tapés.
@@ -233,6 +273,9 @@ commandes, commits et textes du site.
   Test aléatoire avec priorités posées et retirées, reports, terrains fermés, abandons : en appel
   automatique sans repos, un match prioritaire prêt est appelé et en tête de l'ordre annoncé, et aucun
   terrain libre ne reste vide alors qu'un match peut y être appelé (sauf celui qu'un report vient de libérer).
+  Gagnants contre gagnants : simulation de centaines de tournois (corrections, effacements, abandons,
+  arrivées, appel manuel) : jamais bloqué, chaque équipe joue son nombre de matchs, pas de revanche
+  évitable ; en ligne, scores envoyés par les téléphones et validés tout seuls, équipes arrivées appariées.
 
 ## Conventions
 

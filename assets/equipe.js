@@ -209,7 +209,7 @@
       + '<p class="score-max" id="envoi-max"' + (max && envoi.saisie.some((x) => Number(x[0]) > max || Number(x[1]) > max) ? '' : ' hidden') + '>'
       + (max ? 'Le score maximum d’un set est ' + max + ' points.' : '') + '</p>';
     if (envoi.message) {
-      h += '<div class="score-message score-message--' + envoi.message.type + '">' + esc(envoi.message.texte)
+      h += '<div class="score-message score-message--' + envoi.message.type + '" role="alert">' + esc(envoi.message.texte)
         + (envoi.message.liste ? '<ul>' + envoi.message.liste.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '') + '</div>';
     }
     h += '<div class="actions" style="margin-top:14px">'
@@ -240,6 +240,16 @@
       + '<button type="button" class="bouton petit danger" data-action="retirer">Annuler l’envoi</button></div></div>';
   }
 
+  // Après un message d'erreur, le curseur revient dans le formulaire (premier score vide), ou sur
+  // « Envoyer quand même » pour une alerte.
+  function focusEnvoi(alerte) {
+    const form = contenu.querySelector('#form-envoi');
+    if (!form) return;
+    const champs = Array.from(form.querySelectorAll('input'));
+    const cible = alerte ? form.querySelector('button[type="submit"]') : champs.find((x) => !x.value) || champs[0];
+    if (cible) cible.focus();
+  }
+
   async function envoyer() {
     const m = t.matchs.find((x) => x.id === envoi.matchId);
     if (!m || m.statut !== 'en_cours') {
@@ -251,12 +261,14 @@
     if (lu.erreur) {
       envoi.message = { type: 'erreur', texte: lu.erreur };
       rendre();
+      focusEnvoi();
       return;
     }
     const sets = versMoi(lu.sets, m, equipeId); // remet dans l'ordre du match (opération symétrique)
     if (m.phase === 'finale' && !BT.resultat({ sets }).gagnant) {
       envoi.message = { type: 'erreur', texte: 'Un match de phase finale doit avoir un vainqueur.' };
       rendre();
+      focusEnvoi();
       return;
     }
     if (!envoi.confirmer) {
@@ -265,6 +277,7 @@
         envoi.confirmer = true;
         envoi.message = { type: 'alerte', texte: 'Vérifie le score, il ne correspond pas aux règles du tournoi.', liste: alertes };
         rendre();
+        focusEnvoi(true);
         return;
       }
     }
@@ -311,6 +324,8 @@
       : 'ton adversaire suivant, ' + (nomsAttendus[0] || '') + ', n’est pas encore arrivé.';
     const joues = mes.filter((m) => m.statut === 'termine').sort((x, y) => (y.fin || 0) - (x.fin || 0));
     if (envoi && (!enCours || envoi.matchId !== enCours.id)) envoi = null;
+    // Gagnants contre gagnants : matchs de l'équipe pas encore créés (adversaire choisi au fil des résultats).
+    const suisseAVenir = BT.matchsSuisseAVenir(t, e.id);
 
     // Parcours en phase finale
     let parcours = '';
@@ -403,19 +418,22 @@
       } else if (enCours) {
         const derniereEtape = enCours.phase === 'finale' && (enCours.petite || enCours.tour === BT.nbTours(t) - 1);
         if (bloquesMoi.length) ecart = 'Ensuite, ' + phraseAttente;
+        else if (suisseAVenir) ecart = 'Ensuite, ton équipe jouera une équipe qui a ' + BT.texteEcartSuisse(t.reglages) + '.';
         else if (enCours.phase === 'finale' && !derniereEtape) ecart = 'En cas de victoire, ton équipe joue le tour suivant.';
-        else if (suiteFinale === 'poules') ecart = BT.avecPoules(t) ? 'C’est ton dernier match de poule.' : 'C’est ton dernier match de championnat.';
+        else if (suiteFinale === 'poules') ecart = BT.avecPoules(t) ? 'C’est ton dernier match de poule.' : BT.estSuisse(t) ? 'C’est ton dernier match avant la phase finale.' : 'C’est ton dernier match de championnat.';
         else ecart = 'C’est ton dernier match.';
       } else if (absente) {
         ecart = 'Tes matchs commencent une fois ton équipe pointée.';
       } else if (bloquesMoi.length) {
         ecart = phraseAttente.charAt(0).toUpperCase() + phraseAttente.slice(1);
+      } else if (suisseAVenir && st !== 'pret') {
+        ecart = 'Ton adversaire sera choisi dès qu’une équipe se libère.';
       }
       h += '<section class="salle">'
         + '<div class="salle-bloc"><span class="salle-label">' + (actuel ? 'En cours dans la salle' : BT.numeroActuel(t) ? 'Dernier match appelé' : 'Pas encore commencé') + '</span>'
         + '<span class="salle-num">' + (actuel ? 'n° ' + actuel : BT.numeroActuel(t) ? 'n° ' + BT.numeroActuel(t) : 'Bientôt') + '</span></div>'
         + '<div class="salle-bloc salle-bloc--moi"><span class="salle-label">' + (enCours ? 'Ton match' : 'Ton prochain match') + '</span>'
-        + '<span class="salle-num">' + (enCours ? 'n° ' + BT.numero(t, enCours) : numProchain ? 'n° ' + numProchain : absente || bloquesMoi.length ? 'En attente' : suiteFinale ? 'À venir' : 'Aucun') + '</span>'
+        + '<span class="salle-num">' + (enCours ? 'n° ' + BT.numero(t, enCours) : numProchain ? 'n° ' + numProchain : absente || bloquesMoi.length || suisseAVenir ? 'En attente' : suiteFinale ? 'À venir' : 'Aucun') + '</span>'
         + ((enCours || prochain) && BT.categorieMatch(t, enCours || prochain) ? '<span class="salle-cat">' + esc(BT.categorieMatch(t, enCours || prochain)) + '</span>' : '') + '</div>'
         + (ecart ? '<p class="salle-ecart">' + ecart + '</p>' : '')
         + '</section>';
@@ -441,7 +459,15 @@
         + '</section>';
     }
     if (!enCours && !prochain && !absente) {
-      if (bloquesMoi.length) {
+      if (suisseAVenir && !bloquesMoi.length) {
+        const v = moi ? moi.V + moi.N / 2 : 0;
+        h += '<section class="prochain"><div class="prochain-titre">Ton prochain match</div>'
+          + '<div class="prochain-adversaire">Adversaire bientôt choisi</div>'
+          + '<p style="margin:0">Ton équipe a ' + pluriel(v, 'victoire').replace('.', ',') + '. Elle jouera une équipe libre qui a ' + esc(BT.texteEcartSuisse(t.reglages))
+          + ' et que tu n’as pas encore rencontrée, dès qu’une équipe se libère. Reste dans la salle.</p>'
+          + blocAlerte()
+          + '</section>';
+      } else if (bloquesMoi.length) {
         const m = bloquesMoi[0];
         h += '<section class="prochain"><div class="prochain-titre">Ton prochain match' + categorie(m) + '</div>'
           + '<div class="prochain-adversaire">contre ' + nom(adversaire(m)) + '</div>'
@@ -453,7 +479,7 @@
           + '<div class="prochain-adversaire">' + (suiteFinale === 'tour' ? 'Qualifiée pour le tour suivant' : suiteFinale === 'qualifiee' ? 'Qualifiée pour la phase finale' : 'Matchs de poule joués') + '</div>'
           + '<p style="margin:0">' + (suiteFinale === 'tour' ? 'Ton adversaire sera connu à la fin de l’autre match. Reste dans la salle.'
             : suiteFinale === 'qualifiee' ? 'La phase finale commence bientôt. Reste dans la salle.'
-              : 'Les qualifiés pour la phase finale seront connus à la fin de tous les matchs ' + (BT.avecPoules(t) ? 'de poule' : 'du championnat') + '.') + '</p>'
+              : 'Les qualifiés pour la phase finale seront connus à la fin de tous les matchs' + (BT.avecPoules(t) ? ' de poule' : BT.estSuisse(t) ? '' : ' du championnat') + '.') + '</p>'
           + blocAlerte()
           + '</section>';
       } else if (mes.length) {
@@ -508,12 +534,12 @@
     }
 
     if (t.finale) {
-      h += '<h2>Phase finale</h2><div class="tableau-defilant">' + BT.tableauHtml(t, e.id) + '</div>';
+      h += '<h2>Phase finale</h2><div class="tableau-defilant" tabindex="0" role="region" aria-label="Tableau de la phase finale">' + BT.tableauHtml(t, e.id) + '</div>';
     }
 
     if (t.matchs.length) {
       h += '<div class="titre-actions"><h2>Classement' + (pouleMoi != null ? ' de la ' + BT.nomPoule(pouleMoi).replace(/^Poule/, 'poule') : '') + '</h2>'
-        + '<button type="button" class="bouton petit" data-vue="classement">Tout le classement</button></div><div class="tableau-conteneur"><table class="tableau"><thead><tr>'
+        + '<button type="button" class="bouton petit" data-vue="classement">Tout le classement</button></div><div class="tableau-conteneur" tabindex="0" role="region" aria-label="Classement"><table class="tableau"><thead><tr>'
         + '<th>Rang</th><th class="equipe">Équipe</th><th><abbr title="Matchs joués">J</abbr></th><th><abbr title="Victoires">V</abbr></th>'
         + (nuls ? '<th><abbr title="Matchs nuls">N</abbr></th>' : '')
         + '<th><abbr title="Défaites">D</abbr></th><th>Sets</th></tr></thead><tbody>'
@@ -577,7 +603,7 @@
 
   function tableClassement(lignes, qualifiees) {
     const nuls = BT.nulsPossibles(t);
-    return '<div class="tableau-conteneur"><table class="tableau"><thead><tr>'
+    return '<div class="tableau-conteneur" tabindex="0" role="region" aria-label="Classement"><table class="tableau"><thead><tr>'
       + '<th>Rang</th><th class="equipe">Équipe</th><th><abbr title="Matchs joués">J</abbr></th><th><abbr title="Victoires">V</abbr></th>'
       + (nuls ? '<th><abbr title="Matchs nuls">N</abbr></th>' : '')
       + '<th><abbr title="Défaites">D</abbr></th><th><abbr title="Différence de points">Pts</abbr></th></tr></thead><tbody>'
@@ -594,19 +620,19 @@
     const final = st === 'termine' ? BT.classementFinal(t) : null;
     let h = '<p class="en-direct"><span class="point-direct"></span>' + (st === 'termine' ? 'Classement final' : 'En direct, mis à jour à ' + BT.heure(t.maj)) + '</p>';
     if (final) {
-      h += BT.podiumHtml(final) + '<div class="tableau-conteneur"><table class="tableau"><thead><tr><th>Rang</th><th class="equipe">Équipe</th>'
+      h += BT.podiumHtml(final) + '<div class="tableau-conteneur" tabindex="0" role="region" aria-label="Classement"><table class="tableau"><thead><tr><th>Rang</th><th class="equipe">Équipe</th>'
         + '<th class="equipe">' + (t.finale ? 'Parcours' : 'Bilan') + '</th></tr></thead><tbody>'
         + final.map((l) => '<tr' + (l.equipe.id === equipeId ? ' class="moi"' : '') + '><td class="rang">' + (l.rang || '') + '</td><td class="equipe">' + esc(l.equipe.nom) + '</td>'
           + '<td class="equipe">' + esc(t.finale ? l.etape || '' : l.V + ' V, ' + l.D + ' D') + '</td></tr>').join('')
         + '</tbody></table></div>';
     }
-    if (t.finale) h += '<h2>Phase finale</h2><div class="tableau-defilant">' + BT.tableauHtml(t, equipeId) + '</div>';
+    if (t.finale) h += '<h2>Phase finale</h2><div class="tableau-defilant" tabindex="0" role="region" aria-label="Tableau de la phase finale">' + BT.tableauHtml(t, equipeId) + '</div>';
     // « Q » d'après les équipes vraiment qualifiées : une équipe qui a abandonné ne l'est pas.
     const qualifiees = new Set(BT.nbQualifies(t) >= 2 ? BT.qualifies(t).map((x) => x.equipe.id) : []);
     if (BT.avecPoules(t)) {
       BT.listePoules(t).forEach((p) => { h += '<h2>' + p.nom + '</h2>' + tableClassement(BT.classement(t, p.numero), qualifiees); });
     } else if (!final || t.finale) {
-      h += (t.finale ? '<h2>Championnat</h2>' : '') + tableClassement(BT.classement(t), qualifiees);
+      h += (t.finale ? '<h2>' + (BT.estSuisse(t) ? 'Avant la phase finale' : 'Championnat') + '</h2>' : '') + tableClassement(BT.classement(t), qualifiees);
     }
     h += '<p class="note" style="margin-top:12px">Classement au nombre de victoires, puis au match entre les deux équipes à égalité, puis à la différence de sets et de points.'
       + (BT.nbQualifies(t) >= 2 ? ' Q : qualifiée pour la phase finale si le classement reste le même.' : '') + '</p>';
@@ -709,8 +735,8 @@
     if (!choixPhotoEquipe || !photosActives() || !peutChangerPhoto(e)) return '';
     const src = photoDe(e.id);
     return '<div class="photo-equipe-choix">'
-      + (appareilPhoto ? '<label class="bouton petit principal" for="photo-equipe-camera">Prendre une photo</label>' : '')
-      + '<label class="bouton petit' + (appareilPhoto ? '' : ' principal') + '" for="photo-equipe">' + (appareilPhoto ? 'Depuis la galerie' : 'Choisir une photo') + '</label>'
+      + (appareilPhoto ? '<button type="button" class="bouton petit principal" data-fichier="photo-equipe-camera">Prendre une photo</button>' : '')
+      + '<button type="button" class="bouton petit' + (appareilPhoto ? '' : ' principal') + '" data-fichier="photo-equipe">' + (appareilPhoto ? 'Depuis la galerie' : 'Choisir une photo') + '</button>'
       + (src ? '<button type="button" class="bouton petit" data-action="photo-equipe-retirer">Retirer la photo</button>' : '')
       + '<button type="button" class="bouton petit discret" data-action="photo-equipe-choix">Annuler</button></div>';
   }
@@ -770,8 +796,8 @@
       h += '<p class="album-envoi">Envoi de la photo ' + Math.min(envoiPhotos.total, envoiPhotos.faits + envoiPhotos.erreurs + 1) + ' sur ' + envoiPhotos.total + '…</p>';
     } else if (reste > 0) {
       h += '<div class="album-ajouts">'
-        + (appareilPhoto ? '<label class="bouton principal grand" for="prendre-photo">Prendre une photo</label>' : '')
-        + '<label class="bouton grand' + (appareilPhoto ? '' : ' principal') + '" for="ajout-photos">' + (appareilPhoto ? 'Depuis la galerie' : 'Ajouter des photos') + '</label>'
+        + (appareilPhoto ? '<button type="button" class="bouton principal grand" data-fichier="prendre-photo">Prendre une photo</button>' : '')
+        + '<button type="button" class="bouton grand' + (appareilPhoto ? '' : ' principal') + '" data-fichier="ajout-photos">' + (appareilPhoto ? 'Depuis la galerie' : 'Ajouter des photos') + '</button>'
         + '</div>';
       if (max) h += '<p class="note album-reste">Encore ' + reste + ' photo' + (reste > 1 ? 's' : '') + ' possible' + (reste > 1 ? 's' : '') + ' pour toi, ' + max + ' au plus par personne.</p>';
     } else {
@@ -1013,7 +1039,10 @@
     document.getElementById('onglet-equipe').textContent = equipeId ? 'Mon équipe' : 'Équipes';
     document.getElementById('onglet-photos').hidden = !photosActives();
     if (vue === 'photos' && !photosActives()) vue = 'equipe';
-    nav.querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.vue === vue)));
+    nav.querySelectorAll('button').forEach((b) => {
+      if (b.dataset.vue === vue) b.setAttribute('aria-current', 'page');
+      else b.removeAttribute('aria-current');
+    });
   }
 
   function changerVue(nouvelle) {
@@ -1084,6 +1113,14 @@
   document.getElementById('bouton-regles').addEventListener('click', () => {
     reglesChangees = false;
     changerVue('regles');
+  });
+
+  // Boutons qui ouvrent un choix de fichier (photos) : ils prennent le focus au clavier, contrairement à une étiquette.
+  document.addEventListener('click', (e) => {
+    const bouton = e.target.closest && e.target.closest('[data-fichier]');
+    if (!bouton) return;
+    const champ = document.getElementById(bouton.dataset.fichier);
+    if (champ) champ.click();
   });
 
   document.getElementById('onglets-tel').addEventListener('click', (e) => {

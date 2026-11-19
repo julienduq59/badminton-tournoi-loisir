@@ -202,10 +202,17 @@
       ctx.stroke();
     }
 
-    ctx.font = '850 92px ' + POLICE;
+    // Nom long : le texte rapetisse pour tenir en deux lignes avant d'être coupé.
+    let tailleNom = 92;
+    for (const taille of [92, 84, 76, 68, 60]) {
+      tailleNom = taille;
+      ctx.font = '850 ' + taille + 'px ' + POLICE;
+      if (couper(ctx, e.nom, largeurNom, 99).length <= 2) break;
+    }
+    ctx.font = '850 ' + tailleNom + 'px ' + POLICE;
     const nomLignes = couper(ctx, e.nom, largeurNom, 2);
     let y = 370;
-    nomLignes.forEach((ligne) => { ecrire(ctx, ligne, M, y, { taille: 92, poids: 850, max: largeurNom }); y += 96; });
+    nomLignes.forEach((ligne) => { ecrire(ctx, ligne, M, y, { taille: tailleNom, poids: 850, max: largeurNom }); y += Math.round(tailleNom * 1.04); });
     if (e.joueurs) { ecrire(ctx, e.joueurs, M, y - 30, { taille: 36, poids: 600, couleur: 'rgba(255,255,255,0.75)', max: largeurNom }); y += 30; }
     if (photo && y < 500) y = 500;
 

@@ -34,8 +34,12 @@
     photos: true,             // album photo du tournoi et photos d'équipe
     pointage: false,          // pointage à l'arrivée : une équipe ne joue qu'une fois arrivée
     photosMax: 0,             // photos de l'album par personne (0 = sans limite)
-    // Déroulement : une seule poule (championnat) ou plusieurs poules, puis phase finale éventuelle.
+    // Déroulement : une seule poule (championnat), plusieurs poules, ou système suisse (les équipes
+    // libres qui ont le même nombre de victoires se rencontrent), puis phase finale éventuelle.
     format: 'championnat',
+    matchsSuisse: 5,          // système suisse : matchs par équipe
+    ecartSuisse: 1,           // système suisse : écart de victoires accepté entre deux adversaires
+    categorieSuisse: 'double', // système suisse : catégorie des matchs
     nbPoules: 3,
     phaseFinale: 0,          // championnat : nombre d'équipes qualifiées (0 = pas de phase finale)
     qualifiesParPoule: 2,    // poules : qualifiés par poule (0 = pas de phase finale)
@@ -54,6 +58,11 @@
 
   // Catégories jouées, avec leur nombre de matchs par équipe (tous : contre toutes les autres).
   function categoriesJouees(r) {
+    if (r.format === 'suisse') {
+      const c = CATEGORIES.find((x) => x.cle === r.categorieSuisse) || CATEGORIES[1];
+      const k = Math.max(1, Number(r.matchsSuisse) || 1);
+      return [Object.assign({}, c, { tous: false, k, max: k })];
+    }
     const cat = r.cat || {};
     return CATEGORIES.filter((c) => !(c.cle === 'mixte' && r.mixteEgalDouble))
       .map((c) => {
@@ -214,7 +223,7 @@
 
   function statut(t) {
     if (!t.matchs.length) return 'preparation';
-    if (t.matchs.every((m) => m.statut === 'termine') && !finaleAttendue(t)) return 'termine';
+    if (t.matchs.every((m) => m.statut === 'termine') && !finaleAttendue(t) && suisseFini(t)) return 'termine';
     if (demarre(t)) return 'en_cours';
     return 'pret';
   }
@@ -382,6 +391,13 @@
 
   // Message si les réglages du déroulement sont impossibles, sinon null.
   function verifierDeroulement(n, r) {
+    if (r.format === 'suisse') {
+      const R = Number(r.matchsSuisse) || 0;
+      if (R < 1) return 'Chaque équipe doit jouer au moins 1 match.';
+      if (R > n - 1) return 'Avec ' + n + ' équipes, chaque équipe peut jouer au plus ' + (n - 1) + ' match' + (n - 1 > 1 ? 's' : '') + ', sinon des équipes se rencontreraient deux fois.';
+      if (r.phaseFinale > n) return 'La phase finale demande ' + r.phaseFinale + ' équipes qualifiées, il n’y en a que ' + n + '.';
+      return verifierFormatFinale(r, Number(r.phaseFinale) || 0);
+    }
     const cats = categoriesJouees(r);
     if (!cats.length) return 'Choisis au moins une catégorie (simple, double ou mixte) avec au moins 1 match par équipe.';
     if (r.format === 'poules') {
@@ -428,6 +444,12 @@
     delete t.finale;
     t.equipes.forEach((e) => { delete e.abandon; });
     repartirPoules(t);
+    if (r.format === 'suisse') {
+      // Système suisse : les premiers matchs dans l'ordre de la liste, les suivants au fil des résultats.
+      t.matchs = [];
+      apparierSuisse(t, true);
+      return;
+    }
     // Une série de matchs par catégorie ; les mêmes adversaires se retrouvent d'une catégorie à l'autre.
     const cats = categoriesJouees(r);
     const liste = [];
@@ -477,6 +499,261 @@
       if (avecPoules(t)) m.poule = t.equipes[a].poule;
       return m;
     });
+  }
+
+  /* ---------- Système suisse (gagnants contre gagnants) ---------- */
+
+  // Les matchs ne sont pas tous créés au départ : dès qu'une équipe est libre, elle rencontre une
+  // équipe libre qui a le même nombre de victoires (ou l'écart accepté) et qu'elle n'a pas encore jouée.
+  const estSuisse = (t) => !!(t && t.reglages && t.reglages.format === 'suisse');
+  const matchsSuisse = (r) => Math.max(1, Number(r.matchsSuisse) || 1);
+  const ecartSuisse = (r) => Math.max(0, Number(r.ecartSuisse) || 0);
+
+  // Match à jouer que l'appariement peut encore changer : jamais appelé, ni forcé, ni prioritaire, ni reporté.
+  function apparieModifiable(m) {
+    return m.phase !== 'finale' && m.statut === 'attente' && !m.debut && !m.numero && !m.force && !m.priorite && !m.reporte;
+  }
+
+  // État utile à l'appariement : matchs par équipe (tous statuts), équipes déjà prises par un match
+  // à jouer ou en cours, rencontres déjà prévues ou jouées, victoires (un nul compte pour moitié).
+  function etatSuisse(t) {
+    const nb = new Map();
+    const occupe = new Set();
+    const deja = new Set();
+    const derniereFin = new Map();
+    t.matchs.forEach((m) => {
+      if (m.phase === 'finale') return;
+      [m.a, m.b].forEach((x) => nb.set(x, (nb.get(x) || 0) + 1));
+      if (m.statut !== 'termine') { occupe.add(m.a); occupe.add(m.b); }
+      deja.add(m.a + '|' + m.b);
+      deja.add(m.b + '|' + m.a);
+      if (m.statut === 'termine' && m.fin) [m.a, m.b].forEach((x) => derniereFin.set(x, Math.max(derniereFin.get(x) || 0, m.fin)));
+    });
+    const victoires = new Map(classement(t).map((l) => [l.equipe.id, l.V + l.N / 2]));
+    const index = new Map(t.equipes.map((e, i) => [e.id, i]));
+    const e = {
+      nb, occupe, deja, derniereFin, index,
+      R: matchsSuisse(t.reglages),
+      actives: t.equipes.filter((x) => !x.abandon).map((x) => x.id),
+      v: (id) => victoires.get(id) || 0,
+      n: (id) => nb.get(id) || 0,
+      rejoue: (x, y) => deja.has(x + '|' + y),
+    };
+    // Priorité : l'équipe qui a le moins joué, puis celle qui attend depuis le plus longtemps, puis la liste.
+    e.ordre = (x, y) => e.n(x) - e.n(y) || (derniereFin.get(x) || 0) - (derniereFin.get(y) || 0) || index.get(x) - index.get(y);
+    return e;
+  }
+
+  // Meilleure paire parmi des équipes libres (identifiants) : le plus petit écart de victoires (au plus
+  // ecartMax), puis les équipes prioritaires (voir etatSuisse). revanches : autorise deux équipes qui se
+  // sont déjà rencontrées. finDeTournoi : refuse une paire qui ferait finir une équipe alors qu'une équipe
+  // en retard n'aurait plus assez d'adversaires (elle devrait jouer contre des équipes qui ont fini).
+  function meilleurePaire(e, ids, ecartMax, revanches, finDeTournoi) {
+    const liste = ids.slice().sort(e.ordre);
+    let possible = null;
+    if (finDeTournoi) {
+      const manque = (z) => Math.max(0, e.R - e.n(z));
+      const inc = e.actives.filter((z) => manque(z) > 0);
+      const dispo = new Map(inc.map((z) => [z, inc.filter((w) => w !== z && !e.rejoue(z, w)).length]));
+      possible = (x, y) => {
+        const finitX = manque(x) === 1;
+        const finitY = manque(y) === 1;
+        if (!finitX && !finitY) return true;
+        const nouvelle = !e.rejoue(x, y) ? 1 : 0;
+        return inc.every((z) => {
+          if (z === x) return finitX || manque(x) - 1 <= dispo.get(x) - nouvelle;
+          if (z === y) return finitY || manque(y) - 1 <= dispo.get(y) - nouvelle;
+          const perdus = (finitX && !e.rejoue(z, x) ? 1 : 0) + (finitY && !e.rejoue(z, y) ? 1 : 0);
+          return manque(z) <= dispo.get(z) - perdus;
+        });
+      };
+    }
+    let meilleure = null;
+    let cle = null;
+    for (let i = 0; i < liste.length; i++) {
+      for (let j = i + 1; j < liste.length; j++) {
+        const x = liste[i];
+        const y = liste[j];
+        const ecart = Math.abs(e.v(x) - e.v(y));
+        if (ecart > ecartMax || (!revanches && e.rejoue(x, y))) continue;
+        const c = [ecart, e.rejoue(x, y) ? 1 : 0, i, j];
+        if (cle && comparer(c, cle) >= 0) continue;
+        if (possible && !possible(x, y)) continue;
+        meilleure = [x, y];
+        cle = c;
+      }
+    }
+    return meilleure;
+  }
+
+  // Les deux équipes libres les plus proches en victoires, quel que soit l'écart : sans revanche si
+  // possible, sans priver une équipe en retard de ses derniers adversaires si possible.
+  function plusProches(e, ids) {
+    return meilleurePaire(e, ids, 99, false, true) || meilleurePaire(e, ids, 99, true, true)
+      || meilleurePaire(e, ids, 99, false, false) || meilleurePaire(e, ids, 99, true, false);
+  }
+
+  function nouveauMatchSuisse(t, e, a, b, force) {
+    const m = {
+      id: 'm' + uid(6),
+      numero: null,
+      ordre: Math.max(0, ...t.matchs.map((x) => x.ordre || 0)) + 1,
+      a, b,
+      statut: 'attente',
+      terrain: null,
+      debut: null,
+      fin: null,
+      sets: [],
+      categorie: categoriesJouees(t.reglages)[0].cle,
+      victoires: [e.v(a), e.v(b)],
+    };
+    if (force) m.force = true;
+    t.matchs.push(m);
+    return m;
+  }
+
+  // Pointage : un match à jouer dont une seule équipe est arrivée ne peut pas être appelé. Les équipes
+  // arrivées de deux tels matchs jouent ensemble (et les absentes ensemble), ou une équipe arrivée libre
+  // prend la place de l'absente. Rend true si un match a changé.
+  function reorganiserArrivees(t, e) {
+    const ecart = ecartSuisse(t.reglages);
+    const la = (id) => estArrivee(t, id);
+    const accord = (x, y) => !e.rejoue(x, y) && Math.abs(e.v(x) - e.v(y)) <= ecart;
+    const mixtes = t.matchs.filter((m) => apparieModifiable(m) && la(m.a) !== la(m.b)).sort(parOrdre);
+    const cotes = (m) => (la(m.a) ? [m.a, m.b] : [m.b, m.a]);
+    for (let i = 0; i < mixtes.length; i++) {
+      for (let j = i + 1; j < mixtes.length; j++) {
+        const [x1, y1] = cotes(mixtes[i]);
+        const [x2, y2] = cotes(mixtes[j]);
+        if (!accord(x1, x2) || e.rejoue(y1, y2)) continue;
+        Object.assign(mixtes[i], { a: x1, b: x2, victoires: [e.v(x1), e.v(x2)] });
+        Object.assign(mixtes[j], { a: y1, b: y2, victoires: [e.v(y1), e.v(y2)] });
+        return true;
+      }
+    }
+    const libres = e.actives.filter((x) => la(x) && !e.occupe.has(x) && e.n(x) < e.R).sort(e.ordre);
+    for (const f of libres) {
+      const m = mixtes.find((mm) => accord(f, cotes(mm)[0]));
+      if (!m) continue;
+      const x = cotes(m)[0];
+      Object.assign(m, { a: x, b: f, victoires: [e.v(x), e.v(f)] });
+      return true;
+    }
+    return false;
+  }
+
+  // Crée les matchs des équipes libres (voir plus haut). Si plus rien ne se joue ni ne peut être appelé,
+  // les équipes libres les plus proches se rencontrent quand même, pour que le tournoi aille au bout.
+  // À la fin, si une seule équipe n'a pas joué tous ses matchs, elle joue une équipe qui a fini (match en
+  // plus). depart : création du tournoi, toutes les équipes dans l'ordre de la liste. Rend les matchs créés.
+  function apparierSuisse(t, depart) {
+    if (!estSuisse(t) || t.finale) return [];
+    let e = etatSuisse(t);
+    if (!depart && pointageActif(t)) {
+      for (let tour = 0; tour < 200 && reorganiserArrivees(t, e); tour++) e = etatSuisse(t);
+    }
+    const crees = [];
+    const creer = (paire) => {
+      crees.push(nouveauMatchSuisse(t, e, paire[0], paire[1]));
+      e = etatSuisse(t);
+    };
+    const libres = () => e.actives.filter((x) => !e.occupe.has(x) && e.n(x) < e.R && (depart || estArrivee(t, x)));
+    const ecart = depart ? 0 : ecartSuisse(t.reglages);
+    let paire;
+    while ((paire = meilleurePaire(e, libres(), ecart, false, !depart))) creer(paire);
+    if (depart) return crees;
+    // Rien ne se joue et rien ne peut être appelé : les plus proches jouent quand même (une revanche
+    // plutôt qu'un match en plus pour une équipe qui a fini).
+    const rienEnJeu = () => !t.matchs.some((m) => m.phase !== 'finale' && m.statut === 'en_cours') && !matchsAppelables(t).length;
+    // Avec des équipes pas encore arrivées, pas de revanche ni d'équipe privée de ses derniers adversaires :
+    // on attend plutôt les arrivées.
+    const absentes = pointageActif(t) && e.actives.some((x) => !estArrivee(t, x));
+    while (libres().length >= 2 && rienEnJeu()) {
+      paire = absentes ? meilleurePaire(e, libres(), 99, false, true) : plusProches(e, libres());
+      if (!paire) break;
+      creer(paire);
+    }
+    // Match en plus : une seule équipe n'a pas joué tous ses matchs, toutes les autres les ont (au moins prévus).
+    const incompletes = e.actives.filter((x) => e.n(x) < e.R);
+    if (incompletes.length === 1 && libres().length === 1) {
+      const x = incompletes[0];
+      const y = e.actives.filter((z) => z !== x && !e.occupe.has(z) && estArrivee(t, z))
+        .sort((p, q) => Number(e.rejoue(x, p)) - Number(e.rejoue(x, q)) || Math.abs(e.v(x) - e.v(p)) - Math.abs(e.v(x) - e.v(q)) || e.ordre(p, q))[0];
+      if (y) creer([x, y]);
+    }
+    return crees;
+  }
+
+  // Après un pointage (ou son annulation) : en système suisse, les équipes arrivées jouent entre elles ;
+  // puis l'appel automatique remplit les terrains libres.
+  function apresPointage(t) {
+    if (estSuisse(t)) apparierSuisse(t);
+    if (appelAutoActif(t) && demarre(t)) remplirTerrains(t);
+  }
+
+  // Équipes libres qui attendent un adversaire (système suisse), avec leurs victoires.
+  function equipesSansAdversaire(t) {
+    if (!estSuisse(t) || t.finale) return [];
+    const e = etatSuisse(t);
+    return e.actives.filter((x) => !e.occupe.has(x) && e.n(x) < e.R && estArrivee(t, x)).sort(e.ordre)
+      .map((x) => ({ equipe: x, victoires: e.v(x), joues: e.n(x) }));
+  }
+
+  // Match que l'organisateur peut lancer quand même : les deux équipes libres les plus proches en
+  // victoires (sans revanche si possible). Rend [a, b] ou null.
+  function paireForcee(t) {
+    const libres = equipesSansAdversaire(t).map((x) => x.equipe);
+    if (libres.length < 2) return null;
+    return plusProches(etatSuisse(t), libres);
+  }
+
+  function forcerMatchSuisse(t) {
+    const paire = paireForcee(t);
+    if (!paire) return null;
+    return nouveauMatchSuisse(t, etatSuisse(t), paire[0], paire[1], true);
+  }
+
+  // Défait les matchs à jouer encore modifiables de ces équipes (leurs victoires ont changé, ou elles
+  // ne peuvent plus jouer) ; le tournoi garde toujours au moins un match.
+  function defaireAppariements(t, equipes, garder) {
+    const ids = new Set(equipes);
+    const retirer = new Set(t.matchs.filter((m) => m !== garder && apparieModifiable(m) && (ids.has(m.a) || ids.has(m.b))));
+    if (retirer.size && retirer.size === t.matchs.length) retirer.delete(t.matchs[0]);
+    if (retirer.size) t.matchs = t.matchs.filter((m) => !retirer.has(m));
+  }
+
+  // Matchs du système suisse pas encore créés (ceux que les équipes doivent encore jouer).
+  function matchsSuisseRestants(t) {
+    if (!estSuisse(t) || t.finale) return 0;
+    const e = etatSuisse(t);
+    const manque = e.actives.reduce((s, x) => s + Math.max(0, e.R - e.n(x)), 0);
+    return e.actives.length >= 2 ? Math.ceil(manque / 2) : 0;
+  }
+
+  // Matchs qu'une équipe doit encore jouer et qui ne sont pas encore créés (système suisse).
+  function matchsSuisseAVenir(t, equipeId) {
+    if (!estSuisse(t) || t.finale || equipe(t, equipeId).abandon) return 0;
+    const e = etatSuisse(t);
+    return e.actives.length >= 2 ? Math.max(0, e.R - e.n(equipeId)) : 0;
+  }
+
+  // « autant », « autant, ou une de plus ou de moins »… : adversaires possibles selon l'écart accepté.
+  function texteEcartSuisse(r) {
+    const ecart = ecartSuisse(r);
+    if (!ecart) return 'autant de victoires';
+    return 'autant de victoires, ou ' + (ecart === 1 ? 'une' : ecart) + ' de plus ou de moins';
+  }
+
+  // Le système suisse est fini : tous les matchs créés sont joués et plus aucune équipe n'en attend.
+  function suisseFini(t) {
+    if (!estSuisse(t)) return true;
+    if (t.matchs.some((m) => m.phase !== 'finale' && m.statut !== 'termine')) return false;
+    return matchsSuisseRestants(t) === 0;
+  }
+
+  // Nombre total de matchs prévus (les matchs du système suisse pas encore créés compris).
+  function nbMatchsPrevus(t) {
+    return t.matchs.length + matchsSuisseRestants(t);
   }
 
   /* ---------- Terrains ---------- */
@@ -749,6 +1026,7 @@
   // Appelle un match sur chaque terrain libre (ou seulement sur les terrains
   // indiqués). Retourne les matchs appelés. Un appel à la main peut ignorer le repos minimum.
   function remplirTerrains(t, eviter, seulement, exclus, ignorerRepos) {
+    if (estSuisse(t)) apparierSuisse(t);
     eviter = eviter || sortiesDuTerrain(t);
     const occupees = new Set();
     matchsEnCours(t).forEach((m) => { occupees.add(m.a); occupees.add(m.b); });
@@ -935,9 +1213,19 @@
     let fin = base;
     planifier(copie, D, base).forEach((x) => { if (x.heure) fin = Math.max(fin, x.heure + D); });
     const T = Math.max(1, nbTerrainsOuverts(t));
+    fin += dureeSuisseRestante(t, D, T);
     const DF = dureeFinale(t, D);
     toursFinaleRestants(t).forEach((n) => { fin += Math.ceil(n / T) * DF; });
     return fin - base;
+  }
+
+  // Système suisse : durée des matchs pas encore créés (une équipe ne joue qu'un match à la fois).
+  function dureeSuisseRestante(t, D, T) {
+    const restants = matchsSuisseRestants(t);
+    if (!restants) return 0;
+    const e = etatSuisse(t);
+    const parTour = Math.max(1, Math.min(T, Math.floor(e.actives.length / 2)));
+    return Math.ceil(restants / parTour) * D;
   }
 
   // Minutes de dépassement de l'heure de fin de la salle (0 si ça tient), ou null si on ne sait pas.
@@ -1022,7 +1310,19 @@
     const grande = cats.sort((a, b) => b.nb - a.nb)[0];
     const optionsMatchs = (avec) => {
       const liste = [];
-      if (poules && grande && grande.tous) {
+      if (r.format === 'suisse') {
+        const R = matchsSuisse(r);
+        let bas = 1;
+        let haut = R - 1;
+        let trouve = null;
+        while (bas <= haut) {
+          const k = Math.floor((bas + haut) / 2);
+          const o = { texte: k + ' match' + (k > 1 ? 's' : '') + ' par équipe au lieu de ' + R, changements: Object.assign({ matchsSuisse: k }, avec) };
+          const e = estimer(o.changements);
+          if (e && !e.retard) { trouve = Object.assign({ fin: e.fin }, o); bas = k + 1; } else haut = k - 1;
+        }
+        if (trouve) liste.push(trouve);
+      } else if (poules && grande && grande.tous) {
         for (let p = r.nbPoules + 1; p <= Math.min(8, r.nbPoules + 2); p++) {
           liste.push({ texte: p + ' poules au lieu de ' + r.nbPoules + ' (moins de matchs par équipe)', changements: Object.assign({ nbPoules: p }, avec) });
         }
@@ -1084,6 +1384,7 @@
       bloques.forEach((m) => [m.a, m.b].forEach((e) => { if (!estArrivee(t, e)) parEquipe.set(e, (parEquipe.get(e) || 0) + 1); }));
       fin += Math.max(Math.ceil(bloques.length / T), ...parEquipe.values()) * D;
     }
+    fin += dureeSuisseRestante(t, D, T);
     const DF = dureeFinale(t, D);
     toursFinaleRestants(t).forEach((n) => { fin += Math.ceil(n / T) * DF; });
     return fin;
@@ -1219,6 +1520,7 @@
     const etaitEnCours = m.statut === 'en_cours';
     const etaitAppele = m.statut !== 'attente';
     const lance = demarre(t);
+    const gagnantAvant = m.statut === 'termine' ? resultat(m).gagnant || 'nul' : null;
     // Score saisi sans appel : les deux équipes ont joué, elles sont donc là. Un match appelé les a déjà
     // pointées, et un forfait ne prouve pas que l'équipe forfait est venue.
     if (pointageActif(t) && !etaitEnCours && !forfaitDe) {
@@ -1237,6 +1539,11 @@
     delete m.reporte;
     if (etaitEnCours || !m.fin) m.fin = Date.now();
     if (t.finale) avancerTableau(t);
+    if (estSuisse(t)) {
+      // Résultat corrigé qui change le vainqueur : les prochains adversaires de ces équipes sont revus.
+      if (gagnantAvant && gagnantAvant !== (resultat(m).gagnant || 'nul')) defaireAppariements(t, [m.a, m.b], m);
+      apparierSuisse(t);
+    }
     // Terrain libéré, ou équipes libérées (par exemple un match prioritaire réglé sans être joué) : l'appel repart.
     if (etaitEnCours && appelAutoActif(t)) remplirTerrains(t, new Set([m.a, m.b]));
     else if (!etaitEnCours && lance && appelAutoActif(t)) remplirTerrains(t);
@@ -1258,6 +1565,8 @@
     const lance = demarre(t);
     const e = t.equipes.find((x) => x.id === equipeId);
     if (e) e.abandon = Date.now();
+    // Système suisse : ses prochains matchs pas encore appelés sont défaits, ses adversaires en retrouvent un autre.
+    if (estSuisse(t)) defaireAppariements(t, [equipeId]);
     const liberees = new Set();
     t.matchs.forEach((m) => {
       if (m.statut === 'termine' || (m.a !== equipeId && m.b !== equipeId)) return;
@@ -1271,6 +1580,7 @@
       delete m.reporte;
     });
     if (t.finale) avancerTableau(t);
+    if (estSuisse(t)) apparierSuisse(t);
     if (lance && appelAutoActif(t)) remplirTerrains(t, liberees);
   }
 
@@ -1314,6 +1624,7 @@
       m.numero = null;
     });
     if (t.finale) avancerTableau(t);
+    if (estSuisse(t)) apparierSuisse(t);
     if (demarre(t) && appelAutoActif(t)) remplirTerrains(t);
     return true;
   }
@@ -1423,7 +1734,7 @@
   }
 
   function phasePoulesFinie(t) {
-    return t.matchs.length > 0 && t.matchs.every((m) => m.phase === 'finale' || m.statut === 'termine');
+    return t.matchs.length > 0 && t.matchs.every((m) => m.phase === 'finale' || m.statut === 'termine') && suisseFini(t);
   }
 
   function nbTours(t) {
@@ -1557,6 +1868,11 @@
   function etiquetteMatch(t, m) {
     if (m.phase === 'finale') return m.petite ? 'Match pour la 3e place' : nomTourIndex(nbTours(t), m.tour);
     if (m.poule != null && avecPoules(t)) return nomPoule(m.poule);
+    if (estSuisse(t) && m.victoires && m.victoires.length === 2) {
+      const mots = (v) => String(v).replace('.', ',') + ' victoire' + (v > 1 ? 's' : '');
+      const [x, y] = m.victoires.map(Number);
+      return x === y ? 'Équipes à ' + mots(x) : 'Équipes à ' + String(Math.min(x, y)).replace('.', ',') + ' et ' + mots(Math.max(x, y));
+    }
     return '';
   }
 
@@ -1692,6 +2008,11 @@
     delete m.forfait;
     delete m.forfaitAbandon;
     if (t.finale) avancerTableau(t);
+    if (estSuisse(t)) {
+      // Le match est à rejouer : les autres matchs prévus de ses équipes sont défaits.
+      defaireAppariements(t, [m.a, m.b], m);
+      apparierSuisse(t);
+    }
     if (appelAutoActif(t) && demarre(t)) remplirTerrains(t);
     return true;
   }
@@ -1869,9 +2190,13 @@
       t.reglages.cat = cat;
     }
     t.equipes = enTableau(t.equipes).map((e) => Object.assign({}, e, { nom: e.nom || '', joueurs: e.joueurs || '' }));
-    t.matchs = enTableau(t.matchs).map((m) => Object.assign({ terrain: null, debut: null, fin: null }, m, {
-      sets: enTableau(m.sets).map((paire) => enTableau(paire).map(Number)),
-    }));
+    t.matchs = enTableau(t.matchs).map((m) => {
+      const x = Object.assign({ terrain: null, debut: null, fin: null }, m, {
+        sets: enTableau(m.sets).map((paire) => enTableau(paire).map(Number)),
+      });
+      if (m.victoires) x.victoires = enTableau(m.victoires).map(Number);
+      return x;
+    });
     const fermes = enTableau(t.fermes).map(Number).filter((n) => n >= 1 && n <= t.reglages.terrains);
     if (fermes.length) t.fermes = fermes;
     else delete t.fermes;
@@ -1905,13 +2230,25 @@
 
     // Déroulement
     const der = [];
+    const suisse = estSuisse(t);
     if (poules) {
       const tailles = Array.from(new Set(taillesPoules(n, r.nbPoules))).sort((a, b) => b - a);
       der.push(n + ' équipes réparties en ' + r.nbPoules + ' poules de ' + listeEt(tailles.map(String)) + ' équipes.');
+    } else if (suisse) {
+      const R = matchsSuisse(r);
+      const c = categoriesJouees(r)[0];
+      const ecart = ecartSuisse(r);
+      der.push(n + ' équipes. Chaque équipe joue ' + R + ' ' + (R > 1 ? c.pluriel : c.nom.toLowerCase()) + '.');
+      der.push('Les gagnants jouent contre les gagnants : dès qu’une équipe est libre, elle rencontre une équipe libre qui a '
+        + (ecart ? 'le même nombre de victoires ou ' + (ecart === 1 ? 'une victoire' : ecart + ' victoires') + ' d’écart au plus' : 'le même nombre de victoires')
+        + ', et qu’elle n’a pas encore jouée.');
+      der.push(r.pointage ? 'Au départ, les équipes arrivées jouent entre elles, dans l’ordre d’arrivée.' : 'Au départ, les équipes se rencontrent dans l’ordre de la liste.');
+      der.push('Si aucune équipe ne convient, l’organisation peut lancer un match quand même.');
+      if ((n * R) % 2 === 1) der.push('Comme le compte de matchs est impair, une équipe joue un match de plus à la fin.');
     } else {
       der.push(n + ' équipes, toutes dans la même poule.');
     }
-    const cats = categoriesJouees(r);
+    const cats = suisse ? [] : categoriesJouees(r);
     const taillesImpaires = (poules ? taillesPoules(n, r.nbPoules) : [n]).filter((x) => x % 2 === 1);
     const morceaux = cats.map((c) => (c.tous
       ? 'un ' + c.nom.toLowerCase() + ' contre chaque autre équipe' + (poules ? ' de sa poule' : '')
@@ -1939,7 +2276,9 @@
       if (cats.length >= 2) der.push('Les matchs de phase finale se jouent en ' + nomCategorie(categorieFinale(r)).toLowerCase() + '.');
       der.push('En phase finale, chaque match doit avoir un vainqueur.');
     } else {
-      der.push(poules ? 'Pas de phase finale, le classement de chaque poule est le résultat final.' : 'Pas de phase finale, le classement du championnat est le classement final.');
+      der.push(poules ? 'Pas de phase finale, le classement de chaque poule est le résultat final.'
+        : suisse ? 'Pas de phase finale, le classement après tous les matchs est le classement final.'
+          : 'Pas de phase finale, le classement du championnat est le classement final.');
     }
     sections.push({ titre: 'Déroulement', lignes: der });
 
@@ -2179,6 +2518,7 @@
     REGLAGES_DEFAUT, LIBELLES_STATUT, plafondAuto, CATEGORIES, categoriesJouees, nomCategorie, categorieMatch, categorieFinale,
     uid, esc, entier,
     nouveauTournoi, ajusterEquipes, equipe, lireListeEquipes, nomEquipe, statut, texteFormat,
+    estSuisse, apparierSuisse, apresPointage, equipesSansAdversaire, paireForcee, forcerMatchSuisse, matchsSuisseRestants, matchsSuisseAVenir, texteEcartSuisse, suisseFini, nbMatchsPrevus,
     verifierFormat, paires, ordonner, genererMatchs,
     matchsEnCours, matchsEnAttente, equipesReservees, bloqueParPriorite, matchsAppelables, matchsEnAttenteArrivee, pointageActif, estArrivee, matchPointe, equipesAttendues, pointer, annulerPointage, pointerEquipesVenues, terrainsLibres, terrainsFermes, terrainFerme, nbTerrainsOuverts, fermerTerrain, ouvrirTerrain, remplirTerrains, lancer, demarre, prochains, reporter, appelAutoActif,
     numero, numeroActuel, attenteRepos,

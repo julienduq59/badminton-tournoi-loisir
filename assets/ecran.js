@@ -223,7 +223,7 @@
   }
 
   function tete() {
-    const total = t.matchs.length;
+    const total = BT.nbMatchsPrevus(t);
     const faits = t.matchs.filter((m) => m.statut === 'termine').length;
     const fin = faits < total ? BT.finEstimee(t) : null;
     return '<header class="ecran-tete"><div class="ecran-nom">' + BT.ICONE + '<span>' + esc(t.nom) + '</span></div>'
@@ -288,7 +288,7 @@
     let h = '<aside class="zone-suite">';
     h += '<div><h2>Prochain match</h2>';
     if (!liste.length && !t.finale && BT.nbQualifies(t) >= 2 && BT.phasePoulesFinie(t)) {
-      h += '<div class="e-suivant"><div class="e-suivant-num">' + (BT.avecPoules(t) ? 'Poules terminées' : 'Championnat terminé') + '</div>'
+      h += '<div class="e-suivant"><div class="e-suivant-num">' + (BT.avecPoules(t) ? 'Poules terminées' : BT.estSuisse(t) ? 'Matchs terminés' : 'Championnat terminé') + '</div>'
         + '<div class="e-suivant-equipe">Phase finale bientôt</div></div>';
     } else if (liste.length) {
       const m = liste[0].m;
@@ -297,14 +297,16 @@
         + equipeSuivante(m.a) + '<div class="e-suivant-contre">contre</div>' + equipeSuivante(m.b) + '</div>';
     } else {
       const texte = BT.matchsEnAttenteArrivee(t).length ? 'En attente de l’arrivée des équipes'
-        : BT.finaleAttendue(t) ? 'En attente des résultats pour la suite' : 'Tous les matchs sont lancés';
+        : BT.estSuisse(t) && !t.finale && !BT.suisseFini(t) ? 'Les prochains matchs se créent dès que des équipes se libèrent'
+          : BT.finaleAttendue(t) ? 'En attente des résultats pour la suite' : 'Tous les matchs sont lancés';
       h += '<div class="e-suivant"><div class="e-suivant-equipe">' + texte + '</div></div>';
     }
     h += '</div><div class="e-suite-reste">';
     if (liste.length > 1) {
       h += '<h2>Ensuite</h2><ol class="e-liste" id="e-liste">'
         + liste.slice(1, 12).map((x) => '<li><span class="e-num">' + BT.numero(t, x.m) + heure(x) + '</span>'
-          + '<span class="e-eq">' + (BT.categorieMatch(t, x.m) ? '<span class="e-cat-liste">' + esc(BT.categorieMatch(t, x.m)) + '</span>' : '') + nom(x.m.a) + '<span class="e-contre">contre</span>' + nom(x.m.b) + '</span></li>').join('')
+          + '<span class="e-eq"><span class="e-eq-a">' + (BT.categorieMatch(t, x.m) ? '<span class="e-cat-liste">' + esc(BT.categorieMatch(t, x.m)) + '</span>' : '') + nom(x.m.a) + '</span>'
+          + '<span class="e-eq-b"><span class="e-contre">contre</span>' + nom(x.m.b) + '</span></span></li>').join('')
         + '</ol>';
     }
     h += blocAttendues() + blocQr() + '</div></aside>';
@@ -362,9 +364,36 @@
   function ajusterListe() {
     const ol = document.getElementById('e-liste');
     if (!ol) return;
+    // Noms longs : « A » et « contre B » sur deux lignes, pour que l'adversaire reste visible.
+    ol.querySelectorAll('.e-eq').forEach((eq) => { if (eq.scrollWidth > eq.clientWidth + 1) eq.classList.add('e-eq--deux'); });
     const bas = ol.getBoundingClientRect().bottom;
     Array.from(ol.children).forEach((li) => {
       if (li.getBoundingClientRect().bottom > bas + 1) li.remove();
+    });
+    // Plus aucune ligne ne tient : le titre « Ensuite » part avec la liste.
+    if (!ol.children.length) {
+      const titre = ol.previousElementSibling;
+      if (titre && titre.tagName === 'H2') titre.remove();
+      ol.remove();
+    }
+  }
+
+  // Noms longs sur les terrains : les joueurs disparaissent d'abord, puis le texte rapetisse jusqu'à tenir.
+  function ajusterCotes() {
+    const deborde = (el) => el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1;
+    document.querySelectorAll('.e-court-cote').forEach((el) => {
+      if (!deborde(el)) return;
+      const joueurs = el.querySelector('small');
+      if (joueurs) {
+        joueurs.style.display = 'none';
+        if (!deborde(el)) return;
+      }
+      const base = parseFloat(getComputedStyle(el).fontSize) || 16;
+      let taille = base;
+      for (let i = 0; i < 16 && deborde(el) && taille > base * 0.4; i++) {
+        taille *= 0.94;
+        el.style.fontSize = taille + 'px';
+      }
     });
   }
 
@@ -459,6 +488,7 @@
     racine.innerHTML = h;
     const cadre = document.getElementById('e-diapo-cadre');
     if (cadre && imgPhoto.getAttribute('src')) cadre.prepend(imgFond, imgPhoto);
+    ajusterCotes();
     ajusterListe();
     ajusterTableau();
   }
@@ -520,11 +550,14 @@
   /* ---------- Commandes (visibles quand la souris bouge) ---------- */
 
   let minuterie = null;
-  document.addEventListener('mousemove', () => {
+  const montrerCommandes = () => {
     document.body.classList.add('souris');
     clearTimeout(minuterie);
     minuterie = setTimeout(() => document.body.classList.remove('souris'), 2500);
-  });
+  };
+  document.addEventListener('mousemove', montrerCommandes);
+  // Au clavier aussi (touche Tab) : les boutons restent affichés tant que l'un d'eux a le focus.
+  document.addEventListener('keydown', montrerCommandes);
   // Boutons de commande dans la barre du haut : ils ne cachent ni les terrains ni le QR code.
   // Affichés quand la souris bouge, ou tant que le son ou la voix attendent un clic.
   function commandesHtml() {

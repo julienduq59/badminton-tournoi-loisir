@@ -96,6 +96,7 @@
   });
 
   // Restauration d'un fichier de sauvegarde : crée un nouveau tournoi identique.
+  document.getElementById('bouton-restaurer').addEventListener('click', () => document.getElementById('restaurer').click());
   document.getElementById('restaurer').addEventListener('change', async (e) => {
     const fichier = e.target.files && e.target.files[0];
     e.target.value = '';
