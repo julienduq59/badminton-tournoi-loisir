@@ -18,7 +18,7 @@
   let connus = null; // matchs en cours déjà vus, pour sonner à chaque nouvel appel
 
   const nom = (equipeId) => esc(BT.nomEquipe(t, equipeId));
-  const heureMaintenant = () => new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const heureMaintenant = () => BT.heure(Date.now());
 
   /* ---------- Photos : photo des équipes et diaporama de l'album ---------- */
 

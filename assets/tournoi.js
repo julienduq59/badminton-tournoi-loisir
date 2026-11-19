@@ -335,7 +335,7 @@
     return '<div class="progression"><div class="progression-barre"><span style="width:' + pct + '%"></span></div>'
       + '<span class="progression-texte">' + faits + ' / ' + total + ' matchs joués'
       + (fin ? '<small' + (retard ? ' class="fin-retard"' : '') + '>fin estimée vers ' + BT.heure(fin)
-        + (retard ? ', ' + dureeTexte(retard * 60000) + ' après la fin de la salle (' + esc(t.reglages.heureFin) + ')' : '') + '</small>' : '')
+        + (retard ? ', ' + dureeTexte(retard * 60000) + ' après la fin de la salle (' + BT.texteHeure(t.reglages.heureFin) + ')' : '') + '</small>' : '')
       + '</span></div>';
   }
 
@@ -367,14 +367,14 @@
       return h;
     }
     const fin = debut + duree;
-    h += ', de ' + esc(r.heureDebut) + ' à ' + BT.heure(fin) + ' environ.</p>';
+    h += ', de ' + BT.texteHeure(r.heureDebut) + ' à ' + BT.heure(fin) + ' environ.</p>';
     const retard = BT.depassementSalle(tt, fin, debut);
     if (retard) {
-      h += '<p class="horaires-alerte">Ça dépasse la fin de la salle (' + esc(r.heureFin) + ') de ' + dureeTexte(retard * 60000) + '. '
+      h += '<p class="horaires-alerte">Ça dépasse la fin de la salle (' + BT.texteHeure(r.heureFin) + ') de ' + dureeTexte(retard * 60000) + '. '
         + 'Pour gagner du temps, baisse le nombre de matchs par équipe ou de points par set, fixe une durée maximum par match, ou ajoute des terrains.</p>';
     } else if (retard === 0) {
       const marge = Math.floor((BT.heureFinSalle(tt, debut) - fin) / 60000);
-      h += '<p class="horaires-ok">Ça tient avant la fin de la salle (' + esc(r.heureFin) + ')' + (marge >= 1 ? ', avec ' + dureeTexte(marge * 60000) + ' de marge' : '') + '.</p>';
+      h += '<p class="horaires-ok">Ça tient avant la fin de la salle (' + BT.texteHeure(r.heureFin) + ')' + (marge >= 1 ? ', avec ' + dureeTexte(marge * 60000) + ' de marge' : '') + '.</p>';
     }
     if (auto) h += '<p class="note">Si tu connais la durée habituelle de vos matchs, indique-la dans « Durée prévue d’un match » pour affiner.</p>';
     return h;
@@ -1002,6 +1002,12 @@
     };
   }
 
+  // Champ d'heure à la française (« 19h00 ») : le champ heure du navigateur peut s'afficher en
+  // « 07:00 PM » selon sa langue. On accepte aussi « 19h », « 19:00 » ou « 1900 ».
+  function champHeure(idChamp, hhmm, exemple) {
+    return '<input type="text" id="' + idChamp + '" class="champ-heure" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="' + exemple + '" value="' + esc(BT.texteHeure(hhmm)) + '">';
+  }
+
   function caseHtml(idCase, coche, texte) {
     return '<label class="case" id="' + idCase + '-case"><input type="checkbox" id="' + idCase + '"' + (coche ? ' checked' : '') + '><span id="' + idCase + '-texte">' + texte + '</span></label>';
   }
@@ -1082,10 +1088,10 @@
       + '</div></section>'
       // Horaires
       + '<section class="r-bloc"><h2>Horaires</h2><div class="r-grille">'
-      + '<div class="champ"><label for="r-debut">Heure de début</label><input type="time" id="r-debut" value="' + esc(r.heureDebut || '') + '">'
-      + '<span class="aide">Facultatif.</span></div>'
-      + '<div class="champ"><label for="r-fin">Fin de la salle</label><input type="time" id="r-fin" value="' + esc(r.heureFin || '') + '">'
-      + '<span class="aide">Facultatif. Le site te prévient si ça déborde.</span></div>'
+      + '<div class="champ"><label for="r-debut">Heure de début</label>' + champHeure('r-debut', r.heureDebut, '14h00')
+      + '<span class="aide">Facultatif.</span><span class="erreur-champ" id="r-debut-erreur" hidden>Heure non reconnue, écris par exemple 14h00.</span></div>'
+      + '<div class="champ"><label for="r-fin">Fin de la salle</label>' + champHeure('r-fin', r.heureFin, '19h00')
+      + '<span class="aide">Facultatif. Le site te prévient si ça déborde.</span><span class="erreur-champ" id="r-fin-erreur" hidden>Heure non reconnue, écris par exemple 19h00.</span></div>'
       + '<div class="champ champ--plein-tel"><label for="r-prevue">Durée prévue d’un match</label>' + avecUnite(nombre('r-prevue', r.dureePrevue || 0, 0, 90), 'min')
       + '<span class="aide" id="r-prevue-aide"></span></div>'
       + '</div></section>'
@@ -1353,7 +1359,7 @@
         const retard = fin ? BT.depassementSalle(tt, fin) : null;
         if (fin) {
           h = '<p>Fin estimée vers <strong>' + BT.heure(fin) + '</strong>, d’après la durée des matchs déjà joués.</p>'
-            + (retard ? '<p class="horaires-alerte">C’est ' + dureeTexte(retard * 60000) + ' après la fin de la salle (' + esc(r.heureFin) + ').</p>' : '');
+            + (retard ? '<p class="horaires-alerte">C’est ' + dureeTexte(retard * 60000) + ' après la fin de la salle (' + BT.texteHeure(r.heureFin) + ').</p>' : '');
         }
       } else if (!BT.verifierDeroulement(b.equipes.length, r)) {
         let tt;
@@ -1422,8 +1428,20 @@
       case 'r-repos': { const d = BT.entier(v, 0, 30, null); if (d !== null) r.reposMin = d; break; }
       case 'r-prevue': { const d = BT.entier(v, 0, 90, null); if (d !== null) r.dureePrevue = d; break; }
       case 'r-regles': r.reglesPerso = v.slice(0, 1500); break;
-      case 'r-debut': r.heureDebut = /^\d{2}:\d{2}$/.test(v) ? v : ''; break;
-      case 'r-fin': r.heureFin = /^\d{2}:\d{2}$/.test(v) ? v : ''; break;
+      case 'r-debut':
+      case 'r-fin': {
+        const lu = BT.lireHeure(v);
+        r[cible.id === 'r-debut' ? 'heureDebut' : 'heureFin'] = lu || '';
+        // Erreur montrée en quittant le champ ; l'heure reconnue est réécrite à la française.
+        const erreur = $('#' + cible.id + '-erreur');
+        if (lu !== null) erreur.hidden = true;
+        if (e.type === 'change') {
+          erreur.hidden = lu !== null;
+          if (lu) cible.value = BT.texteHeure(lu);
+        }
+        cible.classList.toggle('champ-invalide', e.type === 'change' && lu === null);
+        break;
+      }
       case 'r-auto': r.appelAuto = cible.checked; break;
       case 'r-joueurs': r.scoresJoueurs = cible.checked; break;
       case 'r-validation': r.validationAuto = cible.checked; break;

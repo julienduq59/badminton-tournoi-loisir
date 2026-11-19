@@ -1079,6 +1079,8 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .annonce-equipe--pause { background: #fde8e6; color: #7a1d16; }
 .annonce-equipe--forfait { background: var(--rouge); color: #fff; }
 .annonce-equipe--preavis { background: var(--vert-700); color: #fff; border-left: 6px solid var(--jaune); }
+/* Heures des réglages tapées à la française (« 19h00 ») : champ en rouge si l'heure n'est pas reconnue. */
+.champ-heure.champ-invalide { background: var(--rouge-clair); border-color: var(--rouge); color: var(--rouge); }
 .annonce-equipe--preavis small { display: block; margin-top: 3px; font-weight: 600; opacity: .9; }
 .ecran--annonce { grid-template-rows: auto auto minmax(0, 1fr); }
 .e-annonce {

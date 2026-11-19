@@ -71,6 +71,10 @@ commandes, commits et textes du site.
   équipe a fini il y a moins longtemps (sauf « Jouer » sur un match précis), `planifier` en tient
   compte si la durée des matchs est connue, `attenteRepos(t)` donne l'attente. La page de gestion
   relance l'appel toutes les 15 s quand le repos est fini (transaction, sans doublon).
+- Heures à la française : `BT.heure(ts)` écrit « 19h05 » partout (pages, écran, récap), `texteHeure('19:00')`
+  donne « 19h00 ». Les champs d'heure des réglages sont des champs texte (le champ heure du navigateur
+  s'affiche en « 07:00 PM » selon sa langue) : `lireHeure` accepte « 19h00 », « 19h », « 19 h 30 »,
+  « 19:00 », « 1900 » ou « 19 », réécrit l'heure en « 19h00 » en quittant le champ, sinon champ en rouge.
 - Horaires : `reglages.heureDebut` / `heureFin` (« HH:MM », fin de la salle) et `dureePrevue` (minutes).
   `dureeMatch()` prend la médiane réelle, sinon `dureeReglee(r)` : la durée prévue, sinon
   `dureeSelonFormat(r)` (environ 25 s par point joué, perdant à deux tiers des points du gagnant,

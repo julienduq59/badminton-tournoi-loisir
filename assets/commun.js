@@ -1709,7 +1709,7 @@
 
     // Appel des matchs
     const app = [];
-    if (heureDuJour(r.heureDebut) !== null) app.push('Début du tournoi à ' + r.heureDebut + '.');
+    if (heureDuJour(r.heureDebut) !== null) app.push('Début du tournoi à ' + texteHeure(r.heureDebut) + '.');
     app.push(r.appelAuto
       ? 'Les matchs sont appelés au fur et à mesure que les terrains se libèrent. Chaque match a un numéro.'
       : 'Les organisateurs appellent les matchs au fur et à mesure que les terrains se libèrent. Chaque match a un numéro.');
@@ -1854,9 +1854,30 @@
     return qr.createSvgTag({ cellSize: 4, margin: 8, scalable: true, alt: 'QR code vers ' + texte });
   }
 
+  // Heures écrites à la française : « 19h05 », « 9h30 ».
   function heure(ts) {
     if (!ts) return '';
-    return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const d = new Date(ts);
+    return d.getHours() + 'h' + String(d.getMinutes()).padStart(2, '0');
+  }
+
+  // Heure d'un réglage (« 19:00 ») écrite à la française (« 19h00 »).
+  function texteHeure(hhmm) {
+    const x = /^(\d{1,2}):(\d{2})$/.exec(hhmm || '');
+    return x ? Number(x[1]) + 'h' + x[2] : '';
+  }
+
+  // Heure tapée par un organisateur : « 19h00 », « 19h », « 19 h 30 », « 19:00 », « 1900 », « 19 ».
+  // Donne « HH:MM », '' si le champ est vide, null si l'heure n'est pas reconnue.
+  function lireHeure(texte) {
+    const x = String(texte || '').trim().toLowerCase().replace(/\s+/g, '');
+    if (!x) return '';
+    const m = /^(\d{1,2})(?:[h:.](\d{2})?)?(?:min)?$/.exec(x) || /^(\d{1,2})(\d{2})$/.exec(x);
+    if (!m) return null;
+    const h = Number(m[1]);
+    const mn = Number(m[2] || 0);
+    if (h > 23 || mn > 59) return null;
+    return String(h).padStart(2, '0') + ':' + String(mn).padStart(2, '0');
   }
 
   const ICONE = '<svg viewBox="0 0 64 64" aria-hidden="true"><g transform="rotate(-35 32 32)">'
@@ -1908,7 +1929,7 @@
     verifierFormat, paires, ordonner, genererMatchs,
     matchsEnCours, matchsEnAttente, matchsAppelables, matchsEnAttenteArrivee, pointageActif, estArrivee, matchPointe, equipesAttendues, pointer, annulerPointage, pointerEquipesVenues, terrainsLibres, terrainsFermes, terrainFerme, nbTerrainsOuverts, fermerTerrain, ouvrirTerrain, remplirTerrains, lancer, demarre, prochains, reporter, appelAutoActif,
     numero, numeroActuel, attenteRepos,
-    planifier, dureeMatch, dureeReglee, dureeSelonFormat, finEstimee, dureeEstimee, heureDuJour, heureFinSalle, depassementSalle, prioriser,
+    planifier, dureeMatch, dureeReglee, dureeSelonFormat, finEstimee, dureeEstimee, heureDuJour, texteHeure, lireHeure, heureFinSalle, depassementSalle, prioriser,
     resultat, texteScore, verifierSet, verifierScore, enregistrerScore,
     setsForfait, enregistrerForfait, abandonEquipe, annulerAbandon, effacerResultat,
     nomPoule, avecPoules, listePoules, taillesPoules, verifierPoules, verifierDeroulement, unMatchDePlus, maximumNecessaire,
