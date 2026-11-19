@@ -92,6 +92,16 @@ commandes, commits et textes du site.
   revanche). `matchsSuisseRestants`, `suisseFini` (dans `statut` et `phasePoulesFinie`), `nbMatchsPrevus`
   (progression), `dureeSuisseRestante` (estimations), `matchsSuisseAVenir` (téléphone : « Adversaire
   bientôt choisi »). Phase finale possible ensuite, comme le championnat.
+- Choisir un match (demandé par Julien : obliger le site à faire le match voulu) : bouton de la barre
+  d'outils de l'onglet Terrains et de la carte « En attente d'un adversaire », fenêtre créée par
+  `ouvrirChoixMatch` (deux équipes, catégorie si plusieurs sont jouées). `infosMatchImpose(t, a, b)` dit
+  ce que le match change (match déjà prévu, équipe sur un terrain ou pas pointée, déjà rencontrées,
+  match en plus, hors programme, autres matchs suisses retirés) ; `imposerMatch(t, a, b, { terrain,
+  categorie })` reprend le match prévu entre elles (`matchPrevuEntre`) ou en crée un : en système suisse
+  match `force` qui compte dans leurs matchs (leurs matchs modifiables sont défaits), sinon match
+  `ajoute` hors programme (« Match ajouté », compte au classement s'ils sont dans la même poule). Il part
+  tout de suite sur le terrain libre donné (« Lancer maintenant sur le terrain N », même en pause), sinon
+  il passe en priorité. Pas pendant la phase finale.
 - Phase finale : `t.finale = { taille, places }` (places dans l'ordre du tableau, '' = case vide /
   exempt), matchs avec `phase: 'finale'`, `tour`, `slot`, `petite` (3e place). `avancerTableau()`
   crée ou corrige les matchs suivants à chaque résultat (un match pas terminé suit toujours le

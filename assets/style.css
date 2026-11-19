@@ -294,6 +294,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .terrain-niveau + .terrain-depuis { padding-top: 2px; }
 .carte-suisse small { color: var(--encre-douce); }
 .note-suisse { margin: 0 0 14px; }
+/* Choisir un match */
+.grille-match { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 14px; }
+#match-cat-bloc { grid-column: 1 / -1; }
+.match-infos { display: grid; gap: 6px; margin-top: 14px; font-size: .92rem; }
+.match-infos p { margin: 0; overflow-wrap: anywhere; }
+.match-infos .match-alerte { color: #7a4a00; font-weight: 600; }
+@media (max-width: 480px) { .grille-match { grid-template-columns: minmax(0, 1fr); } }
 
 /* Le terrain vu du dessus : une équipe de chaque côté du filet. */
 .court {

@@ -341,6 +341,8 @@
     majPointagesReglages();
     afficherOnglet();
     garderEcranAllume();
+    // Fenêtre « Choisir un match » ouverte : ses informations suivent le tournoi.
+    if (dialogueMatch && dialogueMatch.open) majChoixMatch();
   }
 
   function progression() {
@@ -542,7 +544,8 @@
         + '<button type="submit" class="bouton petit principal">Afficher</button>'
         + '<button type="button" class="bouton petit" data-action="retirer-annonce" id="retirer-annonce">Retirer</button></div>'
         + '<p class="annonce-actuelle" id="annonce-actuelle"></p></form>'
-        + '<div class="outils-boutons"><button type="button" class="bouton" data-action="pause" id="bouton-pause"></button>'
+        + '<div class="outils-boutons"><button type="button" class="bouton" data-action="choisir-match" id="bouton-choisir-match">Choisir un match</button>'
+        + '<button type="button" class="bouton" data-action="pause" id="bouton-pause"></button>'
         + '<button type="button" class="bouton" data-action="son-orga" id="bouton-son-orga" aria-pressed="false"></button>'
         + '<span class="ecran-allume" id="ecran-allume" hidden>Écran gardé allumé</span></div></div>';
     }
@@ -554,6 +557,7 @@
     }
     $('#retirer-annonce').hidden = !texte;
     $('#annonce-actuelle').textContent = texte ? 'Affiché en ce moment : « ' + texte + ' »' : '';
+    $('#bouton-choisir-match').hidden = !!t.finale || BT.statut(t) === 'termine';
     const pause = $('#bouton-pause');
     pause.textContent = t.pause ? 'Reprendre les appels' : 'Mettre les appels en pause';
     pause.className = 'bouton' + (t.pause ? ' accent' : '');
@@ -661,7 +665,8 @@
         + '<p>' + sansAdversaire.map((x) => nom(x.equipe) + ' <small>(' + texteVictoires(x.victoires) + ')</small>').join(', ') + '.</p>'
         + '<p class="note">Chaque équipe libre attend une équipe libre ' + (Number(t.reglages.ecartSuisse) ? 'à ' + (Number(t.reglages.ecartSuisse) === 1 ? 'une victoire' : t.reglages.ecartSuisse + ' victoires') + ' d’écart au plus' : 'au même nombre de victoires')
         + ', qu’elle n’a pas encore rencontrée. Les matchs se créent dès qu’une équipe se libère.</p>'
-        + (paireSuisse && libres.length ? '<div class="actions">' + boutonForcer(libres[0]) + '</div>' : '')
+        + '<div class="actions">' + (paireSuisse && libres.length ? boutonForcer(libres[0]) : '')
+        + '<button type="button" class="bouton" data-action="choisir-match" data-equipe="' + esc(sansAdversaire[0].equipe) + '">Choisir un match</button></div>'
         + '</div>';
     }
     if (suite.length) {
@@ -1700,6 +1705,105 @@
     }
   }
 
+  /* ---------- Choisir un match (match imposé par l'organisateur) ---------- */
+
+  let dialogueMatch = null;
+  function ouvrirChoixMatch(premiere) {
+    if (!t || t.finale) return;
+    if (!dialogueMatch) {
+      dialogueMatch = document.createElement('dialog');
+      dialogueMatch.className = 'dialogue';
+      dialogueMatch.id = 'dialogue-match';
+      dialogueMatch.setAttribute('aria-labelledby', 'match-titre');
+      dialogueMatch.innerHTML = '<form id="form-match" novalidate><h2 id="match-titre">Choisir un match</h2>'
+        + '<p class="note">Choisis deux équipes : le site les fait jouer ensemble, même si ce n’est pas le match qu’il aurait appelé.</p>'
+        + '<div class="grille-match">'
+        + '<div class="champ"><label for="match-a">Première équipe</label><select id="match-a"></select></div>'
+        + '<div class="champ"><label for="match-b">Deuxième équipe</label><select id="match-b"></select></div>'
+        + '<div class="champ" id="match-cat-bloc" hidden><label for="match-cat">Catégorie</label><select id="match-cat"></select></div>'
+        + '</div>'
+        + '<div class="match-infos" id="match-infos" aria-live="polite"></div>'
+        + '<div class="dialogue-actions">'
+        + '<button type="button" class="bouton discret" id="match-annuler">Annuler</button>'
+        + '<button type="button" class="bouton" id="match-priorite">Le faire passer en premier</button>'
+        + '<button type="button" class="bouton principal" id="match-lancer">Lancer maintenant</button>'
+        + '</div></form>';
+      document.body.appendChild(dialogueMatch);
+      dialogueMatch.addEventListener('change', majChoixMatch);
+      $('#match-annuler').addEventListener('click', () => dialogueMatch.close());
+      $('#match-priorite').addEventListener('click', () => validerChoixMatch(false));
+      $('#match-lancer').addEventListener('click', () => validerChoixMatch(true));
+    }
+    const suisse = BT.estSuisse(t);
+    const victoires = suisse ? new Map(BT.classement(t).map((l) => [l.equipe.id, l.V + l.N / 2])) : null;
+    const actives = t.equipes.filter((e) => !e.abandon);
+    const libelle = (e) => esc(e.nom) + (suisse ? ' (' + texteVictoires(victoires.get(e.id) || 0) + ')' : BT.avecPoules(t) ? ' (' + BT.nomPoule(e.poule) + ')' : '');
+    const options = actives.map((e) => '<option value="' + esc(e.id) + '">' + libelle(e) + '</option>').join('');
+    $('#match-a').innerHTML = options;
+    $('#match-b').innerHTML = options;
+    const a = actives.find((e) => e.id === premiere) || actives[0];
+    if (a) $('#match-a').value = a.id;
+    const b = actives.find((e) => e.id !== (a && a.id));
+    if (b) $('#match-b').value = b.id;
+    const cats = suisse ? [] : BT.categoriesJouees(t.reglages);
+    $('#match-cat-bloc').hidden = cats.length < 2;
+    $('#match-cat').innerHTML = cats.map((c) => '<option value="' + c.cle + '">' + esc(c.nom) + '</option>').join('');
+    majChoixMatch();
+    dialogueMatch.showModal();
+  }
+
+  function lireChoixMatch() {
+    return { a: $('#match-a').value, b: $('#match-b').value, categorie: $('#match-cat-bloc').hidden ? null : $('#match-cat').value };
+  }
+
+  function majChoixMatch() {
+    if (!dialogueMatch || !t) return;
+    const { a, b, categorie } = lireChoixMatch();
+    const info = BT.infosMatchImpose(t, a, b, categorie);
+    const nA = esc(BT.nomEquipe(t, a));
+    const nB = esc(BT.nomEquipe(t, b));
+    const lignes = [];
+    if (a === b) lignes.push('<p class="match-alerte">Choisis deux équipes différentes.</p>');
+    else {
+      [[info.enCoursA, nA], [info.enCoursB, nB]].forEach(([m, n]) => { if (m) lignes.push('<p>' + n + ' joue en ce moment sur le terrain ' + m.terrain + '. Le match partira à la fin de son match.</p>'); });
+      [[info.pointeeA, nA], [info.pointeeB, nB]].forEach(([ok, n]) => { if (!ok) lignes.push('<p>' + n + ' n’est pas encore pointée.</p>'); });
+      if (info.prevu) {
+        const num = BT.numero(t, info.prevu);
+        lignes.push('<p>Leur match' + (num ? ' n° ' + num : '') + (BT.categorieMatch(t, info.prevu) && BT.categoriesJouees(t.reglages).length > 1 ? ' en ' + esc(BT.categorieMatch(t, info.prevu).toLowerCase()) : '') + ' est déjà prévu' + (info.prevu.priorite ? ' et passe déjà en premier' : '') + '.</p>');
+      } else if (info.suisse) {
+        lignes.push('<p>' + nA + ' a ' + texteVictoires(info.victoiresA) + ', ' + nB + ' en a ' + String(info.victoiresB).replace('.', ',') + '.</p>');
+      } else {
+        lignes.push('<p class="match-alerte">' + (info.memePoule ? 'Ce match n’est pas prévu : il s’ajoute au tournoi et compte au classement.'
+          : 'Ce match n’est pas prévu et les deux équipes ne sont pas dans la même poule : il s’ajoute au tournoi sans compter dans le classement des poules.') + '</p>');
+      }
+      if (info.joues.length) lignes.push('<p class="match-alerte">Elles se sont déjà rencontrées (' + info.joues.map((m) => esc(BT.texteScore(m))).join(', ') + ').</p>');
+      info.enPlus.forEach((x) => lignes.push('<p class="match-alerte">' + esc(BT.nomEquipe(t, x)) + ' a déjà tous ses matchs : ce sera un match en plus.</p>'));
+      if (info.defaits.length) lignes.push('<p>Leurs autres matchs pas encore appelés sont retirés, leurs adversaires en retrouvent un autre.</p>');
+      if (BT.statut(t) === 'pret') lignes.push('<p>Le tournoi n’est pas encore lancé. « Lancer maintenant » le lance avec ce match.</p>');
+      else if (!info.terrain && !info.enCoursA && !info.enCoursB) lignes.push('<p>Aucun terrain libre pour l’instant : le match partira dès qu’un terrain se libère.</p>');
+    }
+    $('#match-infos').innerHTML = lignes.join('');
+    const lancer = $('#match-lancer');
+    lancer.disabled = !info.possible || !info.terrain;
+    lancer.textContent = info.terrain ? 'Lancer maintenant sur le terrain ' + info.terrain : 'Lancer maintenant';
+    $('#match-priorite').disabled = !info.possible || !!(info.prevu && info.prevu.priorite);
+  }
+
+  async function validerChoixMatch(maintenant) {
+    const { a, b, categorie } = lireChoixMatch();
+    const info = BT.infosMatchImpose(t, a, b, categorie);
+    if (!info.possible || (maintenant && !info.terrain)) return;
+    const terrain = maintenant ? info.terrain : null;
+    dialogueMatch.close();
+    let fait = false;
+    await agir((tt) => {
+      fait = !!BT.imposerMatch(tt, a, b, { terrain, categorie });
+      return fait;
+    });
+    if (!fait) toast('Ce match n’a pas pu être créé, réessaie.');
+    else toast(terrain ? 'Match lancé sur le terrain ' + terrain + '.' : 'Match placé en premier : il part dès que les deux équipes sont libres.');
+  }
+
   /* ---------- Saisie des scores (organisateur) ---------- */
 
   const dialogue = $('#dialogue-score');
@@ -1926,6 +2030,9 @@
     switch (el.dataset.action) {
       case 'onglet':
         changerOnglet(el.dataset.cible);
+        break;
+      case 'choisir-match':
+        ouvrirChoixMatch(el.dataset.equipe);
         break;
       case 'forcer-suisse': {
         const voulu = Number(el.dataset.terrain);

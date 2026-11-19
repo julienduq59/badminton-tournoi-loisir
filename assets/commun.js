@@ -713,6 +713,87 @@
     return nouveauMatchSuisse(t, etatSuisse(t), paire[0], paire[1], true);
   }
 
+  /* ---------- Match imposé par l'organisateur ---------- */
+
+  // Match pas encore joué entre deux équipes (de cette catégorie de préférence), hors phase finale.
+  function matchPrevuEntre(t, a, b, categorie) {
+    const prevus = t.matchs.filter((m) => m.statut === 'attente' && m.phase !== 'finale'
+      && ((m.a === a && m.b === b) || (m.a === b && m.b === a))).sort(parOrdre);
+    return prevus.find((m) => !categorie || m.categorie === categorie) || prevus[0] || null;
+  }
+
+  // Ce que l'organisateur doit savoir avant d'imposer un match entre a et b : leur match déjà prévu,
+  // s'ils jouent en ce moment, s'ils sont pointés, leurs rencontres passées, et ce que le match change.
+  function infosMatchImpose(t, a, b, categorie) {
+    const r = t.reglages;
+    const suisse = estSuisse(t);
+    const enCours = new Map(matchsEnCours(t).map((m) => [m.a, m]).concat(matchsEnCours(t).map((m) => [m.b, m])));
+    const info = {
+      possible: !!a && !!b && a !== b && !equipe(t, a).abandon && !equipe(t, b).abandon && !t.finale,
+      prevu: a && b ? matchPrevuEntre(t, a, b, categorie) : null,
+      enCoursA: enCours.get(a) || null,
+      enCoursB: enCours.get(b) || null,
+      pointeeA: estArrivee(t, a),
+      pointeeB: estArrivee(t, b),
+      joues: t.matchs.filter((m) => m.statut === 'termine' && m.phase !== 'finale' && ((m.a === a && m.b === b) || (m.a === b && m.b === a))),
+      suisse,
+      enPlus: [],
+      defaits: [],
+      memePoule: !avecPoules(t) || equipe(t, a).poule === equipe(t, b).poule,
+    };
+    if (suisse && info.possible) {
+      const e = etatSuisse(t);
+      info.victoiresA = e.v(a);
+      info.victoiresB = e.v(b);
+      // Un nouveau match compte dans les matchs de chaque équipe ; ses autres matchs pas encore appelés sont défaits.
+      if (!info.prevu) [a, b].forEach((x) => { if (e.n(x) >= e.R) info.enPlus.push(x); });
+      info.defaits = t.matchs.filter((m) => m !== info.prevu && apparieModifiable(m) && (m.a === a || m.b === a || m.a === b || m.b === b));
+    }
+    info.terrain = info.possible && !info.enCoursA && !info.enCoursB ? terrainsLibres(t)[0] || null : null;
+    return info;
+  }
+
+  // Impose le match a contre b : celui déjà prévu entre elles s'il existe, sinon un nouveau match (hors du
+  // programme, sauf en système suisse où il compte dans leurs matchs). Il part tout de suite sur le terrain
+  // donné, ou passe en priorité (il part dès que les deux équipes sont libres). Rend le match, ou null.
+  function imposerMatch(t, a, b, options) {
+    options = options || {};
+    const info = infosMatchImpose(t, a, b, options.categorie);
+    if (!info.possible) return null;
+    let m = info.prevu;
+    if (!m && estSuisse(t)) {
+      m = nouveauMatchSuisse(t, etatSuisse(t), a, b, true);
+    } else if (!m) {
+      const cats = categoriesJouees(t.reglages).map((c) => c.cle);
+      m = {
+        id: 'm' + uid(6),
+        numero: null,
+        ordre: Math.max(0, ...t.matchs.map((x) => x.ordre || 0)) + 1,
+        a, b,
+        statut: 'attente',
+        terrain: null,
+        debut: null,
+        fin: null,
+        sets: [],
+        categorie: cats.includes(options.categorie) ? options.categorie : (cats[0] || 'double'),
+        ajoute: true,
+      };
+      if (avecPoules(t) && info.memePoule) m.poule = equipe(t, a).poule;
+      t.matchs.push(m);
+    }
+    if (estSuisse(t)) {
+      m.force = true;
+      defaireAppariements(t, [a, b], m);
+    }
+    const terrain = options.terrain && info.terrain && terrainsLibres(t).includes(Number(options.terrain)) ? Number(options.terrain) : null;
+    const avant = demarre(t);
+    if (terrain) lancer(t, m, terrain);
+    else prioriser(m, true);
+    if (estSuisse(t)) apparierSuisse(t);
+    if (appelAutoActif(t) && (avant || terrain)) remplirTerrains(t);
+    return m;
+  }
+
   // Défait les matchs à jouer encore modifiables de ces équipes (leurs victoires ont changé, ou elles
   // ne peuvent plus jouer) ; le tournoi garde toujours au moins un match.
   function defaireAppariements(t, equipes, garder) {
@@ -1867,6 +1948,7 @@
   // Étiquette d'un match : poule ou tour de la phase finale.
   function etiquetteMatch(t, m) {
     if (m.phase === 'finale') return m.petite ? 'Match pour la 3e place' : nomTourIndex(nbTours(t), m.tour);
+    if (m.ajoute) return m.poule != null && avecPoules(t) ? nomPoule(m.poule) + ', match ajouté' : 'Match ajouté';
     if (m.poule != null && avecPoules(t)) return nomPoule(m.poule);
     if (estSuisse(t) && m.victoires && m.victoires.length === 2) {
       const mots = (v) => String(v).replace('.', ',') + ' victoire' + (v > 1 ? 's' : '');
@@ -2305,7 +2387,7 @@
     app.push(r.appelAuto
       ? 'Les matchs sont appelés au fur et à mesure que les terrains se libèrent. Chaque match a un numéro.'
       : 'Les organisateurs appellent les matchs au fur et à mesure que les terrains se libèrent. Chaque match a un numéro.');
-    app.push('Une équipe ne joue qu’un match à la fois. Le site évite de faire rejouer tout de suite une équipe qui sort du terrain, puis fait passer celles qui ont le moins joué. Les organisateurs peuvent faire passer un match en priorité.');
+    app.push('Une équipe ne joue qu’un match à la fois. Le site évite de faire rejouer tout de suite une équipe qui sort du terrain, puis fait passer celles qui ont le moins joué. Les organisateurs peuvent faire passer un match en priorité, ou imposer un match entre deux équipes.');
     if (r.pointage) app.push('À ton arrivée, signale-toi sur ton téléphone (bouton « On est arrivés » sur la page de ton équipe) ou à la table de marque. Les matchs de ton équipe ne sont appelés qu’une fois pointée.');
     app.push('Quand ton match est appelé, il s’affiche sur l’écran de la salle et sur ton téléphone, avec le numéro du terrain.');
     sections.push({ titre: 'Appel des matchs', lignes: app });
@@ -2518,7 +2600,7 @@
     REGLAGES_DEFAUT, LIBELLES_STATUT, plafondAuto, CATEGORIES, categoriesJouees, nomCategorie, categorieMatch, categorieFinale,
     uid, esc, entier,
     nouveauTournoi, ajusterEquipes, equipe, lireListeEquipes, nomEquipe, statut, texteFormat,
-    estSuisse, apparierSuisse, apresPointage, equipesSansAdversaire, paireForcee, forcerMatchSuisse, matchsSuisseRestants, matchsSuisseAVenir, texteEcartSuisse, suisseFini, nbMatchsPrevus,
+    estSuisse, apparierSuisse, apresPointage, equipesSansAdversaire, matchPrevuEntre, infosMatchImpose, imposerMatch, paireForcee, forcerMatchSuisse, matchsSuisseRestants, matchsSuisseAVenir, texteEcartSuisse, suisseFini, nbMatchsPrevus,
     verifierFormat, paires, ordonner, genererMatchs,
     matchsEnCours, matchsEnAttente, equipesReservees, bloqueParPriorite, matchsAppelables, matchsEnAttenteArrivee, pointageActif, estArrivee, matchPointe, equipesAttendues, pointer, annulerPointage, pointerEquipesVenues, terrainsLibres, terrainsFermes, terrainFerme, nbTerrainsOuverts, fermerTerrain, ouvrirTerrain, remplirTerrains, lancer, demarre, prochains, reporter, appelAutoActif,
     numero, numeroActuel, attenteRepos,
