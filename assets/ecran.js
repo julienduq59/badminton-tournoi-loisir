@@ -227,6 +227,7 @@
     const faits = t.matchs.filter((m) => m.statut === 'termine').length;
     const fin = faits < total ? BT.finEstimee(t) : null;
     return '<header class="ecran-tete"><div class="ecran-nom">' + BT.ICONE + '<span>' + esc(t.nom) + '</span></div>'
+      + commandesHtml()
       + (total ? '<div class="ecran-progres">' + faits + ' / ' + total + ' matchs joués'
         + (fin ? '<small>fin estimée vers ' + BT.heure(fin) + '</small>' : '') + '</div>' : '')
       + '<div class="ecran-heure" id="heure">' + heureMaintenant() + '</div></header>';
@@ -524,10 +525,18 @@
     clearTimeout(minuterie);
     minuterie = setTimeout(() => document.body.classList.remove('souris'), 2500);
   });
-  document.getElementById('plein-ecran').addEventListener('click', () => {
-    if (document.fullscreenElement) document.exitFullscreen();
-    else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
-  });
+  // Boutons de commande dans la barre du haut : ils ne cachent ni les terrains ni le QR code.
+  // Affichés quand la souris bouge, ou tant que le son ou la voix attendent un clic.
+  function commandesHtml() {
+    const son = lireSon() && BT.sonActif();
+    const voix = voixPrete();
+    return '<div class="e-commandes">'
+      + (synthese ? '<button type="button" class="bouton" id="voix" aria-pressed="' + voix + '">'
+        + (voix ? 'Annonce vocale activée' : lireVoix() ? 'Cliquer pour réactiver la voix' : 'Annonce vocale') + '</button>' : '')
+      + '<button type="button" class="bouton" id="son" aria-pressed="' + son + '">'
+      + (son ? 'Son activé' : lireSon() ? 'Cliquer pour réactiver le son' : 'Activer le son') + '</button>'
+      + '<button type="button" class="bouton" id="plein-ecran">Plein écran</button></div>';
+  }
 
   function lireSon() {
     try { return localStorage.getItem(CLE_SON) === 'oui'; } catch (e) { return false; }
@@ -537,47 +546,55 @@
     document.body.classList.toggle('son-a-activer', (lireSon() && !BT.sonActif()) || (!!synthese && lireVoix() && !voixDebloquee));
   }
   function majBoutonSon() {
-    const actif = lireSon() && BT.sonActif();
     const bouton = document.getElementById('son');
-    bouton.textContent = actif ? 'Son activé' : lireSon() ? 'Cliquer pour réactiver le son' : 'Activer le son';
-    bouton.setAttribute('aria-pressed', String(actif));
+    if (bouton) {
+      const actif = lireSon() && BT.sonActif();
+      bouton.textContent = actif ? 'Son activé' : lireSon() ? 'Cliquer pour réactiver le son' : 'Activer le son';
+      bouton.setAttribute('aria-pressed', String(actif));
+    }
     majCommandes();
   }
   function majBoutonVoix() {
     const bouton = document.getElementById('voix');
-    bouton.hidden = !synthese;
-    const actif = voixPrete();
-    bouton.textContent = actif ? 'Annonce vocale activée' : lireVoix() ? 'Cliquer pour réactiver la voix' : 'Annonce vocale';
-    bouton.setAttribute('aria-pressed', String(actif));
+    if (bouton) {
+      const actif = voixPrete();
+      bouton.textContent = actif ? 'Annonce vocale activée' : lireVoix() ? 'Cliquer pour réactiver la voix' : 'Annonce vocale';
+      bouton.setAttribute('aria-pressed', String(actif));
+    }
     majCommandes();
   }
-  document.getElementById('voix').addEventListener('click', () => {
-    const activer = !voixPrete();
-    try { localStorage.setItem(CLE_VOIX, activer ? 'oui' : 'non'); } catch (e) { /* stockage indisponible */ }
-    if (activer) {
-      voixDebloquee = true;
-      parler('Annonce vocale activée.');
-    } else if (synthese) {
-      synthese.cancel();
-    }
-    majBoutonVoix();
-  });
-  document.getElementById('son').addEventListener('click', () => {
-    const activer = !(lireSon() && BT.sonActif());
-    try { localStorage.setItem(CLE_SON, activer ? 'oui' : 'non'); } catch (e) { /* stockage indisponible */ }
-    if (activer) {
-      BT.activerSon();
-      setTimeout(() => { BT.bip(); majBoutonSon(); }, 50);
-    }
-    majBoutonSon();
-  });
-  // Après un rechargement, le navigateur demande un clic pour réactiver le son et la voix.
+  // Les boutons sont redessinés avec la barre du haut : un seul écouteur pour tous les clics.
   document.addEventListener('click', (e) => {
-    if (e.target.id !== 'son' && lireSon() && !BT.sonActif()) {
+    const bouton = e.target.closest ? e.target.closest('#voix, #son, #plein-ecran') : null;
+    const cible = bouton ? bouton.id : '';
+    if (cible === 'plein-ecran') {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+    } else if (cible === 'voix') {
+      const activer = !voixPrete();
+      try { localStorage.setItem(CLE_VOIX, activer ? 'oui' : 'non'); } catch (err) { /* stockage indisponible */ }
+      if (activer) {
+        voixDebloquee = true;
+        parler('Annonce vocale activée.');
+      } else if (synthese) {
+        synthese.cancel();
+      }
+      majBoutonVoix();
+    } else if (cible === 'son') {
+      const activer = !(lireSon() && BT.sonActif());
+      try { localStorage.setItem(CLE_SON, activer ? 'oui' : 'non'); } catch (err) { /* stockage indisponible */ }
+      if (activer) {
+        BT.activerSon();
+        setTimeout(() => { BT.bip(); majBoutonSon(); }, 50);
+      }
+      majBoutonSon();
+    }
+    // Après un rechargement, le navigateur demande un clic pour réactiver le son et la voix.
+    if (cible !== 'son' && lireSon() && !BT.sonActif()) {
       BT.activerSon();
       setTimeout(majBoutonSon, 50);
     }
-    if (e.target.id !== 'voix' && synthese && lireVoix() && !voixDebloquee) {
+    if (cible !== 'voix' && synthese && lireVoix() && !voixDebloquee) {
       voixDebloquee = true;
       parler('Annonce vocale prête.');
       majBoutonVoix();

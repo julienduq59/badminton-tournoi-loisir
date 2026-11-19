@@ -744,19 +744,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .e-classement .rang { color: var(--jaune); font-variant-numeric: tabular-nums; }
 .e-classement .bilan-e { color: rgba(255, 255, 255, .7); font-variant-numeric: tabular-nums; font-size: .85em; }
 
-.e-commandes {
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 10;
-  display: flex;
-  gap: 8px;
-  opacity: 0;
-  transition: opacity .3s;
-}
-.e-commandes .bouton { background: rgba(255, 255, 255, .12); color: #fff; border-color: rgba(255, 255, 255, .3); }
+/* Boutons de commande dans la barre du haut (ils ne recouvrent rien), seulement quand la souris
+   bouge ou que le son ou la voix attendent un clic. */
+.e-commandes { display: none; flex: none; gap: 8px; }
+.e-commandes .bouton { background: rgba(255, 255, 255, .12); color: #fff; border-color: rgba(255, 255, 255, .3); white-space: nowrap; }
 .e-commandes .bouton[aria-pressed="true"] { background: var(--jaune); color: var(--vert-900); border-color: var(--jaune); }
-.page-ecran.souris .e-commandes, .page-ecran.son-a-activer .e-commandes { opacity: 1; }
+.page-ecran.souris .e-commandes, .page-ecran.son-a-activer .e-commandes { display: flex; }
 .page-ecran:not(.souris) { cursor: none; }
 
 /* ---------- Connexion, notifications ---------- */
@@ -1341,7 +1334,13 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .album-tete { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 4px 0 12px; }
 .album-tete h2 { margin: 0; }
 .album-compte { color: var(--encre-douce); font-weight: 650; font-size: .92rem; }
-.album-ajout { width: 100%; cursor: pointer; }
+.album-ajouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.album-ajouts .bouton, .photo-equipe-choix label.bouton { cursor: pointer; text-align: center; }
+.photo-equipe-choix { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+/* Boutons sur le fond vert foncé de l'en-tête de l'équipe. */
+.photo-equipe-choix .bouton { background: #fff; color: var(--vert-900); border-color: #fff; }
+.photo-equipe-choix .bouton.principal { background: var(--jaune); color: var(--vert-900); border-color: var(--jaune); }
+.photo-equipe-choix .bouton.discret { background: transparent; color: #fff; border-color: rgba(255, 255, 255, .45); }
 .album-reste { margin: 8px 0 0; text-align: center; }
 .album-envoi { margin: 0; padding: 14px 16px; border-radius: var(--rayon-petit); background: var(--vert-50); border: 1px solid var(--vert-100); color: var(--vert-800); font-weight: 650; text-align: center; }
 .album-message { margin: 10px 0 0; font-weight: 650; color: var(--vert-700); }

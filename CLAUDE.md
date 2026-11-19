@@ -124,6 +124,8 @@ commandes, commits et textes du site.
   terrain 3. A contre B. », catégorie lue seulement si le tournoi en mélange plusieurs, nom du tour en
   phase finale), ainsi que le message de l'organisation et la mise en pause quand ils changent. Le
   navigateur ne parle qu'après un clic : après un rechargement, « Cliquer pour réactiver la voix ».
+  Boutons de commande (voix, son, plein écran) dans la barre du haut (`commandesHtml`, redessinés avec
+  elle, un seul écouteur de clics), affichés quand la souris bouge ou qu'un clic est attendu.
 - Cases de score (téléphone et dialogue organisateur) : `type="text"` + `inputmode="numeric"`,
   2 chiffres au plus (`chiffresScore`), case rouge et phrase au-delà de `maxPointsSet(reg)` (points sans
   écart, sinon score maximum), passage à la case suivante après 2 chiffres tapés.
@@ -156,7 +158,10 @@ commandes, commits et textes du site.
   `photos/<k>` (grande, lue à la demande), `equipesPhotos/<équipe>` ; en local : clé `badminton:ph:<id>`.
   Un spectateur ne crée pas de compte (`monIdentifiant()` sans `creer`) ; le compte anonyme n'est créé
   qu'au premier envoi. Les champs de fichier sont dans `equipe.html`, hors du contenu redessiné (sinon un
-  choix fait pendant un rafraîchissement se perd). Le maximum par personne n'est vérifié que sur le
+  choix fait pendant un rafraîchissement se perd) : galerie (`ajout-photos`, plusieurs photos,
+  `photo-equipe`) et appareil photo (`prendre-photo` avec `capture="environment"`, `photo-equipe-camera`
+  avec `capture="user"`). « Prendre une photo » n'est proposé que sur écran tactile (`pointer: coarse`) ;
+  photo d'équipe : « Ajouter une photo » / « Changer la photo » ouvre le choix (`choixPhotoEquipe`). Le maximum par personne n'est vérifié que sur le
   téléphone. Écran : `vue=photos` (diaporama, 7 s par photo, nouvelles photos en premier avec le badge
   « Nouvelle photo » pendant 3 min, photo retirée enlevée tout de suite, grandes images gardées en
   adresses `blob:`), et dans `vue=alterne` quand l'album n'est pas vide. Album du téléphone : vignettes

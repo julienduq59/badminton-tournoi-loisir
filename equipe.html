@@ -6,10 +6,10 @@
   <title>Mon équipe · Badminton</title>
   <meta name="robots" content="noindex">
   <meta name="theme-color" content="#0a3d2b">
-  <link rel="icon" href="assets/volant.svg?v=20261119-3" type="image/svg+xml">
+  <link rel="icon" href="assets/volant.svg?v=20261119-4" type="image/svg+xml">
   <link rel="apple-touch-icon" href="assets/icone-180.png">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="assets/style.css?v=20261119-3">
+  <link rel="stylesheet" href="assets/style.css?v=20261119-4">
 </head>
 <body class="page-equipe">
   <header class="barre">
@@ -27,7 +27,9 @@
   <main class="contenu" id="contenu"></main>
   <!-- Choix des photos en dehors du contenu : il se redessine pendant que la galerie du téléphone est ouverte. -->
   <input type="file" id="ajout-photos" accept="image/*" multiple hidden>
+  <input type="file" id="prendre-photo" accept="image/*" capture="environment" hidden>
   <input type="file" id="photo-equipe" accept="image/*" hidden>
+  <input type="file" id="photo-equipe-camera" accept="image/*" capture="user" hidden>
 
   <dialog class="visionneuse" id="visionneuse" aria-label="Photo">
     <div class="vis-haut"><span id="vis-legende"></span><button type="button" class="bouton petit" id="vis-fermer">Fermer</button></div>
@@ -40,12 +42,12 @@
     </div>
   </dialog>
 
-  <script src="assets/vendor/qrcode.js?v=20261119-3"></script>
-  <script src="assets/config.js?v=20261119-3"></script>
-  <script src="assets/commun.js?v=20261119-3"></script>
-  <script src="assets/donnees.js?v=20261119-3"></script>
-  <script src="assets/photos.js?v=20261119-3"></script>
-  <script src="assets/recap.js?v=20261119-3"></script>
-  <script src="assets/equipe.js?v=20261119-3"></script>
+  <script src="assets/vendor/qrcode.js?v=20261119-4"></script>
+  <script src="assets/config.js?v=20261119-4"></script>
+  <script src="assets/commun.js?v=20261119-4"></script>
+  <script src="assets/donnees.js?v=20261119-4"></script>
+  <script src="assets/photos.js?v=20261119-4"></script>
+  <script src="assets/recap.js?v=20261119-4"></script>
+  <script src="assets/equipe.js?v=20261119-4"></script>
 </body>
 </html>

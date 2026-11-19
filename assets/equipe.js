@@ -95,6 +95,9 @@
   const vignettes = new Map(); // vignettes déjà dessinées, gardées d'un affichage à l'autre
   const grandes = new Map();   // dernières grandes photos ouvertes (8 au plus)
   const photosActives = () => !!t && t.reglages.photos !== false;
+  // Téléphone ou tablette : on propose de prendre la photo sur le moment (appareil photo), en plus de la galerie.
+  const appareilPhoto = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  let choixPhotoEquipe = false; // choix « Prendre une photo / Depuis la galerie / Retirer » ouvert
   const photoDe = (equipe) => (photosActives() && photosEquipes[equipe] ? BT.Photos.imageSure(photosEquipes[equipe].image) : '');
   // Règles : affichées d'abord tant que ce téléphone n'a pas lu leur version actuelle.
   const cleRegles = 'badminton:regles:' + id;
@@ -363,7 +366,7 @@
       + '<span>' + pluriel(moi ? moi.V : 0, 'victoire') + '</span>'
       + (nuls && moi && moi.N ? '<span>' + pluriel(moi.N, 'nul') + '</span>' : '')
       + '<span>' + pluriel(moi ? moi.D : 0, 'défaite') + '</span>'
-      + '</div></div></section>';
+      + '</div></div>' + choixPhotoHtml(e) + '</section>';
     if (absente && st !== 'termine') h += blocPointage(e);
     else if (pointage && e.arrivee && !e.abandon && st !== 'termine' && Date.now() - e.arrivee < 5 * 60000) {
       h += '<p class="pointage-ok">Ton équipe est pointée, arrivée à ' + BT.heure(e.arrivee) + '.</p>';
@@ -682,19 +685,32 @@
 
   // Photo de l'équipe en tête de sa page : ajout tant qu'il n'y en a pas, changement ou retrait
   // par le téléphone qui l'a mise ou par un organisateur.
+  function peutChangerPhoto(e) {
+    const p = photosEquipes[e.id];
+    return !p || D.estOrganisateur(id) || (monUid && p.uid === monUid);
+  }
+
   function blocPhotoEquipe(e) {
     if (!photosActives()) return '';
-    const p = photosEquipes[e.id];
     const src = photoDe(e.id);
-    const peutChanger = !p || D.estOrganisateur(id) || (monUid && p.uid === monUid);
     const initiales = e.nom.split(/\s+/).filter(Boolean).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
     return '<div class="photo-equipe">'
       + (src ? '<img class="avatar-equipe" src="' + esc(src) + '" alt="Photo de l’équipe">' : '<span class="avatar-equipe avatar-vide" aria-hidden="true">' + esc(initiales) + '</span>')
-      + (peutChanger
-        ? '<label class="photo-equipe-bouton" for="photo-equipe">' + (src ? 'Changer' : 'Ajouter une photo') + '</label>'
-          + (src ? '<button type="button" class="photo-equipe-bouton" data-action="photo-equipe-retirer">Retirer</button>' : '')
+      + (peutChangerPhoto(e)
+        ? '<button type="button" class="photo-equipe-bouton" data-action="photo-equipe-choix" aria-expanded="' + choixPhotoEquipe + '">' + (src ? 'Changer la photo' : 'Ajouter une photo') + '</button>'
         : '')
       + '</div>';
+  }
+
+  // Choix pour la photo de l'équipe : la prendre sur le moment, la choisir dans la galerie, ou la retirer.
+  function choixPhotoHtml(e) {
+    if (!choixPhotoEquipe || !photosActives() || !peutChangerPhoto(e)) return '';
+    const src = photoDe(e.id);
+    return '<div class="photo-equipe-choix">'
+      + (appareilPhoto ? '<label class="bouton petit principal" for="photo-equipe-camera">Prendre une photo</label>' : '')
+      + '<label class="bouton petit' + (appareilPhoto ? '' : ' principal') + '" for="photo-equipe">' + (appareilPhoto ? 'Depuis la galerie' : 'Choisir une photo') + '</label>'
+      + (src ? '<button type="button" class="bouton petit" data-action="photo-equipe-retirer">Retirer la photo</button>' : '')
+      + '<button type="button" class="bouton petit discret" data-action="photo-equipe-choix">Annuler</button></div>';
   }
 
   async function poserPhotoEquipe(fichier) {
@@ -751,7 +767,10 @@
     if (envoiPhotos) {
       h += '<p class="album-envoi">Envoi de la photo ' + Math.min(envoiPhotos.total, envoiPhotos.faits + envoiPhotos.erreurs + 1) + ' sur ' + envoiPhotos.total + '…</p>';
     } else if (reste > 0) {
-      h += '<label class="bouton principal grand album-ajout" for="ajout-photos">Ajouter des photos</label>';
+      h += '<div class="album-ajouts">'
+        + (appareilPhoto ? '<label class="bouton principal grand" for="prendre-photo">Prendre une photo</label>' : '')
+        + '<label class="bouton grand' + (appareilPhoto ? '' : ' principal') + '" for="ajout-photos">' + (appareilPhoto ? 'Depuis la galerie' : 'Ajouter des photos') + '</label>'
+        + '</div>';
       if (max) h += '<p class="note album-reste">Encore ' + reste + ' photo' + (reste > 1 ? 's' : '') + ' possible' + (reste > 1 ? 's' : '') + ' pour toi, ' + max + ' au plus par personne.</p>';
     } else {
       h += '<p class="album-envoi">Tu as ajouté tes ' + max + ' photos, le maximum par personne.</p>';
@@ -1071,16 +1090,19 @@
   });
 
   // Champs vidés après chaque choix : la même photo peut être choisie à nouveau.
-  document.getElementById('ajout-photos').addEventListener('change', (e) => {
+  ['ajout-photos', 'prendre-photo'].forEach((idChamp) => document.getElementById(idChamp).addEventListener('change', (e) => {
     const fichiers = Array.from(e.target.files || []);
     e.target.value = '';
     ajouterPhotos(fichiers);
-  });
-  document.getElementById('photo-equipe').addEventListener('change', (e) => {
+  }));
+  ['photo-equipe', 'photo-equipe-camera'].forEach((idChamp) => document.getElementById(idChamp).addEventListener('change', (e) => {
     const fichier = e.target.files && e.target.files[0];
     e.target.value = '';
+    if (!fichier) return;
+    choixPhotoEquipe = false;
+    rendre();
     poserPhotoEquipe(fichier);
-  });
+  }));
 
   contenu.addEventListener('click', (e) => {
     const vignette = e.target.closest('[data-photo]');
@@ -1129,9 +1151,15 @@
           navigator.share({ files: [fichier], title: t.nom, text: 'Mon récap du tournoi ' + t.nom }).catch(() => {});
         }
         break;
+      case 'photo-equipe-choix':
+        choixPhotoEquipe = !choixPhotoEquipe;
+        rendre();
+        break;
       case 'photo-equipe-retirer':
         if (confirm('Retirer la photo de l’équipe ?')) {
+          choixPhotoEquipe = false;
           D.retirerPhotoEquipe(id, equipeId).catch((err) => alert(BT.Photos.messageErreur(err)));
+          rendre();
         }
         break;
       case 'arrivee':
