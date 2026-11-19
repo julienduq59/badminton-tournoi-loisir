@@ -1201,8 +1201,8 @@
       + '<div class="champ"><label for="r-terrains">Nombre de terrains</label>' + nombre('r-terrains', r.terrains, 1, 30)
       + caseHtml('r-auto', r.appelAuto, 'Appel automatique')
       + '<span class="aide">Le match suivant est appelé dès qu’un terrain se libère.</span></div>'
-      + '<div class="champ"><label for="r-repos">Repos minimum</label>' + avecUnite(nombre('r-repos', r.reposMin || 0, 0, 30), 'min')
-      + '<span class="aide">Entre deux matchs d’une équipe, 0 pour enchaîner.</span></div>'
+      + '<div class="champ champ--large"><label for="r-repos">Temps minimum entre deux matchs</label>' + avecUnite(nombre('r-repos', r.reposMin || 0, 0, 30), 'min')
+      + '<span class="aide">Repos de chaque équipe avant son match suivant : le site attend ce temps avant de l’appeler. 0 pour enchaîner.</span></div>'
       + '</div></section>'
       // Horaires
       + '<section class="r-bloc"><h2>Horaires</h2><div class="r-grille">'
@@ -1475,7 +1475,8 @@
         + (matchsFinale ? '<span><strong>' + matchsFinale + '</strong> matchs de phase finale</span>' : '')
         + '<span>' + pluriel(Math.ceil(total / Math.max(1, Math.min(r.terrains, Math.floor(n / 2)))), 'rotation') + ' sur ' + pluriel(r.terrains, 'terrain')
         + (Math.floor(n / 2) < r.terrains ? ' (' + pluriel(Math.floor(n / 2), 'match', 'matchs') + ' en même temps au plus)' : '') + '</span>' : '')
-      + '<span>' + esc(BT.texteFormat(r)) + '</span>';
+      + '<span>' + esc(BT.texteFormat(r)) + '</span>'
+      + (Number(r.reposMin) > 0 ? '<span>' + r.reposMin + ' min de repos au moins entre deux matchs d’une équipe</span>' : '');
 
     $('#r-prevue-aide').textContent = 'À 0, le site compte environ ' + Math.round(BT.dureeSelonFormat(r) / 60000)
       + ' min d’après le format (25 secondes par point joué), puis la durée réelle des matchs.';
@@ -1769,6 +1770,13 @@
       if (ensemble) lignes.push('<p>Elles jouent ensemble en ce moment sur le terrain ' + info.enCoursA.terrain + ' : le nouveau match partira après celui-ci.</p>');
       else [[info.enCoursA, nA], [info.enCoursB, nB]].forEach(([m, n]) => { if (m) lignes.push('<p>' + n + ' joue en ce moment sur le terrain ' + m.terrain + '. Le match partira à la fin de son match.</p>'); });
       [[info.pointeeA, nA], [info.pointeeB, nB]].forEach(([ok, n]) => { if (!ok) lignes.push('<p>' + n + ' n’est pas encore pointée.</p>'); });
+      // Temps minimum entre deux matchs pas encore écoulé.
+      const repos = [[info.reposA, nA], [info.reposB, nB]].filter(([reste]) => reste > 0);
+      if (repos.length) {
+        const minutes = Math.max(1, Math.ceil(Math.max(...repos.map(([reste]) => reste)) / 60000));
+        lignes.push('<p>' + repos.map(([, n]) => n).join(' et ') + (repos.length > 1 ? ' se reposent' : ' se repose') + ' encore ' + minutes + ' min (temps minimum entre deux matchs). '
+          + '« Lancer maintenant » ' + (repos.length > 1 ? 'les' : 'la') + ' fait jouer quand même ; en premier, le match attend la fin du repos.</p>');
+      }
       if (info.prevu) {
         const num = BT.numero(t, info.prevu);
         lignes.push('<p>Leur match' + (num ? ' n° ' + num : '') + (BT.categorieMatch(t, info.prevu) && BT.categoriesJouees(t.reglages).length > 1 ? ' en ' + esc(BT.categorieMatch(t, info.prevu).toLowerCase()) : '') + ' est déjà prévu' + (info.prevu.priorite ? ' et passe déjà en premier' : '') + '.</p>');

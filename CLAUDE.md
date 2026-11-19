@@ -118,10 +118,14 @@ commandes, commits et textes du site.
   à chaque mise à jour du tournoi. Le récap est une image dessinée sur canvas par `assets/recap.js`
   (`BT.dessinerRecap(t, equipeId)`, récap du tournoi sans équipe) à partir de `statsEquipe`,
   `statsTournoi` et `placeEquipe` (commun.js) ; elle n'est recréée que sur demande.
-- Repos minimum (`reglages.reposMin`, minutes) : `remplirTerrains` n'appelle pas un match dont une
+- Repos minimum (`reglages.reposMin`, minutes ; dans les Réglages « Temps minimum entre deux matchs »,
+  mots de Julien, aussi dans le résumé) : `remplirTerrains` n'appelle pas un match dont une
   équipe a fini il y a moins longtemps (sauf « Jouer » sur un match précis), `planifier` en tient
   compte si la durée des matchs est connue, `attenteRepos(t)` donne l'attente. La page de gestion
-  relance l'appel toutes les 15 s quand le repos est fini (transaction, sans doublon).
+  relance l'appel toutes les 15 s quand le repos est fini (transaction, sans doublon). « Choisir un
+  match » dit le repos qu'il reste (`infosMatchImpose` : `reposA`, `reposB`) : « Lancer maintenant »
+  passe outre, en priorité le match attend la fin du repos. En gagnants contre gagnants, faire passer
+  d'abord les paires reposées n'apporte rien (mesuré) : le temps perdu vient du repos lui-même.
 - Heures à la française : `BT.heure(ts)` écrit « 19h05 » partout (pages, écran, récap), `texteHeure('19:00')`
   donne « 19h00 ». Les champs d'heure des réglages sont des champs texte (le champ heure du navigateur
   s'affiche en « 07:00 PM » selon sa langue) : `lireHeure` accepte « 19h00 », « 19h », « 19 h 30 »,

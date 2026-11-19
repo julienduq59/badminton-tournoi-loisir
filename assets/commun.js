@@ -749,6 +749,14 @@
       if (!info.prevu) [a, b].forEach((x) => { if (e.n(x) >= e.R) info.enPlus.push(x); });
       info.defaits = t.matchs.filter((m) => m !== info.prevu && apparieModifiable(m) && (m.a === a || m.b === a || m.a === b || m.b === b));
     }
+    // Temps minimum entre deux matchs : repos qu'il reste à chaque équipe (en ms, 0 si reposée).
+    const repos = reposMs(t);
+    if (repos) {
+      const fins = finsParEquipe(t);
+      const reste = (x) => (enCours.get(x) ? 0 : Math.max(0, (fins.get(x) || 0) + repos - Date.now()));
+      info.reposA = reste(a);
+      info.reposB = reste(b);
+    }
     info.terrain = info.possible && !info.enCoursA && !info.enCoursB ? terrainsLibres(t)[0] || null : null;
     return info;
   }
