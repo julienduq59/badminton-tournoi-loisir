@@ -29,6 +29,12 @@ commandes, commits et textes du site.
   d'un match : `planifier` l'écarte au départ et après un repos, la minuterie de repos l'exclut.
   Bouton « Appeler le match suivant » : même choix que l'appel automatique, repos compris (« Jouer »
   force un match). En appel manuel, la liste suppose qu'un terrain libre est rempli tout de suite.
+  L'appel repart aussi après un score ou un forfait saisi sur un match en attente et après le report
+  d'un match en attente (tournoi commencé), pour qu'aucun terrain ne reste vide (équipes d'un match
+  prioritaire libérées). Avec un repos minimum, la minuterie compte aussi les matchs reportés quand plus
+  rien n'est en cours (sinon le dernier match reporté n'était jamais rappelé). Si l'organisateur reporte le
+  dernier match en cours sans autre match possible, le terrain libre affiche « Match reporté : appelle-le
+  quand ses équipes sont prêtes ».
 - Numéros des matchs : un match reçoit son numéro quand il est appelé (`lancer`) ou terminé sans
   appel (`numeroter`), donc les numéros suivent l'ordre réel des appels (1, 2, 3…). Un match en
   attente affiche un numéro prévu (`numero(t, m)`, calculé avec `planifier`). Retour en attente
@@ -38,13 +44,18 @@ commandes, commits et textes du site.
   (`numeroActuel`) et le numéro du prochain match de l'équipe.
 - Heures estimées : `dureeMatch()` (médiane des 12 derniers matchs, sinon `dureeReglee`),
   `planifier(t, durée)` et `finEstimee()`. Avant le lancement, pas d'heure sans heure de début à venir.
-- Forfaits : `enregistrerForfait()` (un match, champ `forfait` = équipe perdante) et
-  `abandonEquipe()` / `annulerAbandon()` (champ `abandon` sur l'équipe ; les forfaits posés par
-  l'abandon portent `forfaitAbandon`, seuls ceux-là sont annulés). `genererMatchs` efface les abandons. Un forfait seul ne lance
-  pas le tournoi (`demarre()`).
+- Forfaits : `enregistrerForfait()` (un match, champ `forfait` = équipe perdante, passe par
+  `enregistrerScore(t, m, sets, perdant)` ; un forfait ne pointe pas l'équipe) et `abandonEquipe()` /
+  `annulerAbandon()` (champ `abandon` sur l'équipe = heure de l'abandon, `true` dans les très anciens
+  tournois ; les forfaits posés par l'abandon portent `forfaitAbandon` et seuls ceux-là sont rouverts
+  (`matchsAbandon`) ; un match contre une équipe toujours partie reste perdu par forfait à son nom ;
+  annulation refusée quand la suite du tableau d'un de ces matchs a commencé, `abandonAnnulable`).
+  `effacerResultat` refuse un match d'une équipe partie. `genererMatchs` efface les abandons. Un forfait
+  seul ne lance pas le tournoi (`demarre()`).
 - Classement : victoires, puis confrontation directe si exactement deux équipes sont à égalité,
   puis différence de sets, puis différence de points. `classement(t, poule)` ne compte jamais les
-  matchs de phase finale.
+  matchs de phase finale. « Qualifiée » / « Q » d'après `qualifies(t)` (une équipe partie ne l'est pas).
+  Podium (`podiumHtml`) : les équipes à égalité sont sur la même marche (deux 3e sans petite finale).
 - Catégories : `reglages.cat = { simple, double, mixte }` avec `{ k, max, tous }` : au moins `k` matchs
   par équipe dans la catégorie, au plus `max` (0 ou absent = `k`), ou contre toutes les autres (ou toute
   sa poule). Le site prévoit `k` pour chaque équipe ; avec un nombre impair d'équipes et `k` impair,
@@ -148,7 +159,8 @@ commandes, commits et textes du site.
   `equipesAttendues`). `matchsAppelables(t)` remplace `matchsEnAttente(t)` dans `remplirTerrains`,
   `planifier` et `attenteRepos` : les matchs d'une équipe pas pointée (`matchsEnAttenteArrivee`) n'ont
   ni numéro ni heure prévus ; dès son pointage, ses matchs reviennent dans la file (elle a moins joué,
-  donc passe vite). `lancer` (« Jouer » à la main) et `enregistrerScore` pointent les deux équipes ;
+  donc passe vite). `lancer` (« Jouer » à la main) et un score saisi sans appel pointent les deux équipes (pas un forfait,
+  et recréer les matchs garde l'heure d'arrivée) ;
   activer le pointage en cours de tournoi pointe les équipes qui ont déjà joué (`pointerEquipesVenues`).
   `finEstimee` ajoute les matchs en attente d'arrivée à la fin ; `dureeEstimee` suppose tout le monde là.
   Téléphone : carte « Ton équipe n'est pas encore pointée » et bouton « On est arrivés »
@@ -188,7 +200,8 @@ commandes, commits et textes du site.
   depuis gstatic) quand la configuration est remplie. Toute modification du tournoi passe par
   `Donnees.modifier(id, fn)` (transaction en ligne) : `fn` reçoit la version la plus récente.
 - Données en ligne : `tournois/<id>/donnees` (le tournoi), `tournois/<id>/propositions/<match>/<équipe>`
-  (scores envoyés par les joueurs, rangés dans l'ordre du match), `tournois/<id>/arrivees/<équipe>`
+  (scores envoyés par les joueurs, rangés dans l'ordre du match, retirés dès que le match n'est plus en
+  cours, par exemple après un report), `tournois/<id>/arrivees/<équipe>`
   (arrivées signalées par les téléphones, en attente de la page de gestion), `tournois/<id>/admins/<uid>`.
   Un appareil devient organisateur en prouvant la clé du tournoi (`cles/<id>`, illisible) via
   `preuves/<id>/<uid>` ; la clé circule dans le lien organisateur `tournoi.html?t=<id>#cle=<clé>`.
