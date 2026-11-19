@@ -404,7 +404,7 @@
     return h;
   }
 
-  function carteTerrain(n, m, st, appelPossible, attendArrivee) {
+  function carteTerrain(n, m, st, appelPossible, attendArrivee, attendPriorite) {
     if (m) {
       const liste = propositionsDe(m.id);
       const accord = liste.every((p) => BT.memesSets(p.sets, liste[0].sets));
@@ -438,7 +438,7 @@
     if (st === 'pret') texte = 'En attente du lancement';
     else if (n > t.reglages.terrains) texte = 'Terrain retiré';
     else if (!BT.matchsEnAttente(t).length) texte = 'Plus de match à appeler';
-    else if (!appelPossible) texte = attendArrivee ? 'Équipes pas encore arrivées' : 'Les équipes restantes jouent déjà';
+    else if (!appelPossible) texte = attendPriorite ? 'En attente du match prioritaire' : attendArrivee ? 'Équipes pas encore arrivées' : 'Les équipes restantes jouent déjà';
     else if (BT.attenteRepos(t) > 0 && BT.appelAutoActif(t)) texte = 'Repos des équipes, appel dans ' + Math.max(1, Math.ceil(BT.attenteRepos(t) / 60000)) + ' min';
     const bouton = st === 'en_cours' && appelPossible && n <= t.reglages.terrains
       ? '<button type="button" class="bouton" data-action="appeler" data-terrain="' + n + '">Appeler le match suivant</button>'
@@ -511,8 +511,12 @@
     }
     const occupees = equipesOccupees();
     const libresDeJouer = (m) => !occupees.has(m.a) && !occupees.has(m.b);
-    const appelPossible = BT.matchsAppelables(t).some(libresDeJouer);
-    const attendArrivee = !appelPossible && BT.matchsEnAttenteArrivee(t).some(libresDeJouer);
+    const appelables = BT.matchsAppelables(t);
+    const reservees = BT.equipesReservees(appelables);
+    const appelPossible = appelables.some((m) => libresDeJouer(m) && !BT.bloqueParPriorite(m, reservees));
+    // Terrain libre parce que les équipes libres attendent leur match prioritaire, ou une équipe pas arrivée.
+    const attendPriorite = !appelPossible && appelables.some((m) => libresDeJouer(m) && BT.bloqueParPriorite(m, reservees));
+    const attendArrivee = !appelPossible && !attendPriorite && BT.matchsEnAttenteArrivee(t).some(libresDeJouer);
     const libres = BT.terrainsLibres(t);
     const suite = BT.prochains(t);
     const T = BT.nbTerrainsOuverts(t);
@@ -572,7 +576,7 @@
         + Array.from({ length: t.reglages.terrains }, (_, i) => i + 1).map((n) => '<button type="button" data-action="basculer-terrain" data-terrain="' + n + '" aria-pressed="' + !BT.terrainFerme(t, n) + '" title="' + (BT.terrainFerme(t, n) ? 'Rouvrir' : 'Fermer') + ' le terrain ' + n + '">' + n + '</button>').join('')
         + '</div></div></div>'
         + '<div class="grille-terrains">'
-        + numerosTerrains().map((n) => carteTerrain(n, BT.matchsEnCours(t).find((m) => m.terrain === n), st, appelPossible, attendArrivee)).join('')
+        + numerosTerrains().map((n) => carteTerrain(n, BT.matchsEnCours(t).find((m) => m.terrain === n), st, appelPossible, attendArrivee, attendPriorite)).join('')
         + '</div>';
     }
     if (suite.length) {
@@ -607,7 +611,12 @@
     else if (o.suivant) etat = '<span class="etiquette">Prochain appel</span>';
     else etat = '<span class="etiquette">À jouer</span>';
     if (!fini && propositionsDe(m.id).length) etat += ' <span class="etiquette etiquette--recu">Score reçu</span>';
-    if (m.statut === 'attente' && m.priorite) etat += ' <span class="etiquette etiquette--priorite">Prioritaire</span>';
+    if (m.statut === 'attente' && m.priorite) {
+      etat += ' <span class="etiquette etiquette--priorite">Prioritaire</span>';
+      // Il part dès que ses deux équipes sont libres : on dit laquelle joue encore.
+      const enJeu = [m.a, m.b].filter((x) => (o.occupees || equipesOccupees()).has(x));
+      if (enJeu.length) etat += ' <span class="etiquette">' + enJeu.map(nom).join(' et ') + (enJeu.length > 1 ? ' jouent' : ' joue') + ' encore</span>';
+    }
     else if (m.statut === 'attente' && m.reporte) etat += ' <span class="etiquette">Reporté</span>';
 
     const libres = o.libres || BT.terrainsLibres(t);
@@ -1810,6 +1819,8 @@
           const x = trouver(tt, matchId);
           if (!x || x.statut !== 'attente') return false;
           BT.prioriser(x, active);
+          // Un terrain libre peut maintenant recevoir un match (priorité posée ou retirée).
+          if (BT.appelAutoActif(tt) && BT.demarre(tt)) BT.remplirTerrains(tt);
           return true;
         });
         break;

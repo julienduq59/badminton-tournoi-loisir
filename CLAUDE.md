@@ -19,7 +19,11 @@ commandes, commits et textes du site.
   `remplirTerrains()` : l'ordre affiché « à suivre » doit rester identique à l'ordre réel des appels.
   Règle d'appel (`choisir`) : match prioritaire, puis match non reporté, puis équipes qui ne sortent
   pas du terrain (`sortiesDuTerrain` quand l'appel ne les donne pas, même règle dans `planifier`), puis
-  équipes qui ont le moins joué, puis ordre de la file. `prochains()` et les numéros prévus utilisent
+  équipes qui ont le moins joué, puis ordre de la file. Les équipes d'un match prioritaire en attente
+  sont gardées pour lui (`equipesReservees`, `bloqueParPriorite`, aussi dans `planifier` et
+  `attenteRepos`) : il part dès que ses deux équipes sont libres (sinon l'une rejouait ailleurs pendant
+  que l'autre finissait, et il n'était jamais appelé). Poser ou retirer une priorité relance l'appel ;
+  la liste dit quelle équipe « joue encore », un terrain libre affiche « En attente du match prioritaire ». `prochains()` et les numéros prévus utilisent
   `planifier(t, dureeMatch(t))` (repos compris). Un match reporté (`reporte`) ne revient qu'à la fin
   d'un match : `planifier` l'écarte au départ et après un repos, la minuterie de repos l'exclut.
   Bouton « Appeler le match suivant » : même choix que l'appel automatique, repos compris (« Jouer »

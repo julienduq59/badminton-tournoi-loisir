@@ -516,14 +516,29 @@
     return pointageActif(t) ? matchsEnAttente(t).filter((m) => !matchPointe(t, m)) : [];
   }
 
+  // Équipes d'un match prioritaire qui attend : gardées pour lui. Sans cela, quand l'une des deux
+  // joue encore, l'autre part sur un autre match dès qu'un terrain se libère, et les deux ne sont
+  // jamais libres en même temps : le match prioritaire n'était plus appelé.
+  function equipesReservees(attente) {
+    const reservees = new Set();
+    attente.forEach((m) => {
+      if (m.priorite) { reservees.add(m.a); reservees.add(m.b); }
+    });
+    return reservees;
+  }
+  const bloqueParPriorite = (m, reservees) => !m.priorite && (reservees.has(m.a) || reservees.has(m.b));
+
   // Choisit le prochain match parmi ceux dont les deux équipes sont libres :
-  // d'abord les matchs mis en priorité par un organisateur, puis ceux où aucune
-  // équipe ne sort du terrain, puis les équipes qui ont le moins joué, puis l'ordre de la file.
+  // d'abord les matchs mis en priorité par un organisateur (leurs équipes ne partent pas jouer
+  // ailleurs en attendant), puis ceux où aucune équipe ne sort du terrain, puis les équipes qui
+  // ont le moins joué, puis l'ordre de la file.
   function choisir(attente, occupees, eviter, joues, pret) {
     let meilleur = null;
     let cleMeilleure = null;
+    const reservees = equipesReservees(attente);
     for (const m of attente) {
       if (occupees.has(m.a) || occupees.has(m.b)) continue;
+      if (bloqueParPriorite(m, reservees)) continue;
       if (pret && !pret(m)) continue;
       const cle = [
         m.priorite ? 0 : 1,
@@ -651,8 +666,10 @@
     matchsEnCours(t).forEach((m) => { occupees.add(m.a); occupees.add(m.b); });
     const fins = finsParEquipe(t);
     let min = null;
-    matchsAppelables(t).forEach((m) => {
-      if (m.reporte || occupees.has(m.a) || occupees.has(m.b)) return;
+    const appelables = matchsAppelables(t);
+    const reservees = equipesReservees(appelables);
+    appelables.forEach((m) => {
+      if (m.reporte || occupees.has(m.a) || occupees.has(m.b) || bloqueParPriorite(m, reservees)) return;
       const pret = Math.max(fins.get(m.a) || 0, fins.get(m.b) || 0) + R;
       const reste = Math.max(0, pret - maintenant);
       min = min === null ? reste : Math.min(min, reste);
@@ -744,8 +761,9 @@
         // Des équipes libres se reposent encore : on avance jusqu'à la fin de leur repos.
         if (R) {
           let prochain = null;
+          const reservees = equipesReservees(attente);
           attente.forEach((x) => {
-            if (x.reporte || occupees.has(x.a) || occupees.has(x.b)) return;
+            if (x.reporte || occupees.has(x.a) || occupees.has(x.b) || bloqueParPriorite(x, reservees)) return;
             const p = Math.max(fins.get(x.a) || 0, fins.get(x.b) || 0) + R;
             if (prochain === null || p < prochain) prochain = p;
           });
@@ -1927,7 +1945,7 @@
     uid, esc, entier,
     nouveauTournoi, ajusterEquipes, equipe, nomEquipe, statut, texteFormat,
     verifierFormat, paires, ordonner, genererMatchs,
-    matchsEnCours, matchsEnAttente, matchsAppelables, matchsEnAttenteArrivee, pointageActif, estArrivee, matchPointe, equipesAttendues, pointer, annulerPointage, pointerEquipesVenues, terrainsLibres, terrainsFermes, terrainFerme, nbTerrainsOuverts, fermerTerrain, ouvrirTerrain, remplirTerrains, lancer, demarre, prochains, reporter, appelAutoActif,
+    matchsEnCours, matchsEnAttente, equipesReservees, bloqueParPriorite, matchsAppelables, matchsEnAttenteArrivee, pointageActif, estArrivee, matchPointe, equipesAttendues, pointer, annulerPointage, pointerEquipesVenues, terrainsLibres, terrainsFermes, terrainFerme, nbTerrainsOuverts, fermerTerrain, ouvrirTerrain, remplirTerrains, lancer, demarre, prochains, reporter, appelAutoActif,
     numero, numeroActuel, attenteRepos,
     planifier, dureeMatch, dureeReglee, dureeSelonFormat, finEstimee, dureeEstimee, heureDuJour, texteHeure, lireHeure, heureFinSalle, depassementSalle, prioriser,
     resultat, texteScore, verifierSet, verifierScore, enregistrerScore,
