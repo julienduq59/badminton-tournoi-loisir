@@ -368,12 +368,71 @@
   }
 
   function sonnerSiNouvelAppel() {
-    const actuels = new Set(BT.matchsEnCours(t).map((m) => m.id));
+    const enCours = BT.matchsEnCours(t);
+    const actuels = new Set(enCours.map((m) => m.id));
     if (connus) {
-      const nouveau = Array.from(actuels).some((x) => !connus.has(x));
-      if (nouveau && lireSon()) BT.bip();
+      const nouveaux = enCours.filter((m) => !connus.has(m.id));
+      if (nouveaux.length && lireSon()) BT.bip();
+      // Annonce vocale après le bip : un appel par match, dans l'ordre des terrains.
+      if (nouveaux.length && voixPrete()) setTimeout(() => nouveaux.forEach((m) => parler(texteAppel(m))), lireSon() && BT.sonActif() ? 900 : 0);
     }
     connus = actuels;
+    annoncerMessage();
+  }
+
+  /* ---------- Annonce vocale (synthèse vocale du navigateur) ---------- */
+
+  const CLE_VOIX = 'badminton:voix-ecran';
+  const synthese = window.speechSynthesis || null;
+  let voixDebloquee = false; // le navigateur ne parle qu'après un clic sur la page
+  let voixFr = null;
+  function choisirVoix() {
+    const francaises = (synthese.getVoices() || []).filter((v) => /^fr/i.test(v.lang));
+    // Une voix française installée sur l'appareil d'abord (elle marche aussi sans bon réseau).
+    voixFr = francaises.sort((x, y) => (y.localService ? 1 : 0) - (x.localService ? 1 : 0)
+      || (/fr.FR/i.test(y.lang) ? 1 : 0) - (/fr.FR/i.test(x.lang) ? 1 : 0))[0] || null;
+  }
+  if (synthese) {
+    choisirVoix();
+    if (synthese.addEventListener) synthese.addEventListener('voiceschanged', choisirVoix);
+  }
+  function lireVoix() {
+    try { return localStorage.getItem(CLE_VOIX) === 'oui'; } catch (e) { return false; }
+  }
+  const voixPrete = () => !!synthese && lireVoix() && voixDebloquee;
+  let derniereFin = Date.now();
+  function parler(texte) {
+    if (!synthese || !texte) return;
+    // Synthèse restée bloquée (cela arrive avec certaines voix en ligne) : on la relance.
+    if (synthese.speaking && Date.now() - derniereFin > 60000) synthese.cancel();
+    const phrase = new SpeechSynthesisUtterance(texte);
+    phrase.lang = 'fr-FR';
+    if (voixFr) phrase.voice = voixFr;
+    phrase.rate = 0.95;
+    phrase.onend = () => { derniereFin = Date.now(); };
+    phrase.onerror = phrase.onend;
+    synthese.speak(phrase);
+  }
+  // « Match 12, terrain 3. Les Volants contre Les Smashs. », avec la catégorie si le tournoi en mélange
+  // plusieurs (« Match 12, en simple, … ») ; en phase finale, le nom du tour.
+  function texteAppel(m) {
+    const categorie = m.phase === 'finale' || BT.categoriesJouees(t.reglages).length < 2 ? '' : BT.categorieMatch(t, m);
+    return (m.phase === 'finale' ? BT.etiquetteMatch(t, m) : 'Match ' + BT.numero(t, m))
+      + (categorie ? ', en ' + categorie.toLowerCase() : '')
+      + ', terrain ' + m.terrain + '. ' + BT.nomEquipe(t, m.a) + ' contre ' + BT.nomEquipe(t, m.b) + '.';
+  }
+  // Message de l'organisation et mise en pause : lus quand ils changent (pas à l'ouverture de l'écran).
+  let dernierMessage = null;
+  let dernierePause = null;
+  function annoncerMessage() {
+    const message = t.annonce && t.annonce.texte ? t.annonce.texte : '';
+    const pause = !!t.pause;
+    if (dernierMessage !== null && voixPrete()) {
+      if (message && message !== dernierMessage) parler('Annonce. ' + message);
+      else if (pause && !dernierePause && !message) parler('Les appels sont en pause, les matchs reprennent bientôt.');
+    }
+    dernierMessage = message;
+    dernierePause = pause;
   }
 
   function bandeau() {
@@ -473,13 +532,36 @@
   function lireSon() {
     try { return localStorage.getItem(CLE_SON) === 'oui'; } catch (e) { return false; }
   }
+  // Les commandes restent visibles tant que le son ou la voix attendent un clic pour repartir.
+  function majCommandes() {
+    document.body.classList.toggle('son-a-activer', (lireSon() && !BT.sonActif()) || (!!synthese && lireVoix() && !voixDebloquee));
+  }
   function majBoutonSon() {
     const actif = lireSon() && BT.sonActif();
     const bouton = document.getElementById('son');
     bouton.textContent = actif ? 'Son activé' : lireSon() ? 'Cliquer pour réactiver le son' : 'Activer le son';
     bouton.setAttribute('aria-pressed', String(actif));
-    document.body.classList.toggle('son-a-activer', lireSon() && !BT.sonActif());
+    majCommandes();
   }
+  function majBoutonVoix() {
+    const bouton = document.getElementById('voix');
+    bouton.hidden = !synthese;
+    const actif = voixPrete();
+    bouton.textContent = actif ? 'Annonce vocale activée' : lireVoix() ? 'Cliquer pour réactiver la voix' : 'Annonce vocale';
+    bouton.setAttribute('aria-pressed', String(actif));
+    majCommandes();
+  }
+  document.getElementById('voix').addEventListener('click', () => {
+    const activer = !voixPrete();
+    try { localStorage.setItem(CLE_VOIX, activer ? 'oui' : 'non'); } catch (e) { /* stockage indisponible */ }
+    if (activer) {
+      voixDebloquee = true;
+      parler('Annonce vocale activée.');
+    } else if (synthese) {
+      synthese.cancel();
+    }
+    majBoutonVoix();
+  });
   document.getElementById('son').addEventListener('click', () => {
     const activer = !(lireSon() && BT.sonActif());
     try { localStorage.setItem(CLE_SON, activer ? 'oui' : 'non'); } catch (e) { /* stockage indisponible */ }
@@ -489,14 +571,20 @@
     }
     majBoutonSon();
   });
-  // Après un rechargement, le navigateur demande un clic pour réactiver le son.
+  // Après un rechargement, le navigateur demande un clic pour réactiver le son et la voix.
   document.addEventListener('click', (e) => {
     if (e.target.id !== 'son' && lireSon() && !BT.sonActif()) {
       BT.activerSon();
       setTimeout(majBoutonSon, 50);
     }
+    if (e.target.id !== 'voix' && synthese && lireVoix() && !voixDebloquee) {
+      voixDebloquee = true;
+      parler('Annonce vocale prête.');
+      majBoutonVoix();
+    }
   });
   majBoutonSon();
+  majBoutonVoix();
 
   // Empêche la mise en veille de l'écran quand c'est possible.
   async function garderEveille() {

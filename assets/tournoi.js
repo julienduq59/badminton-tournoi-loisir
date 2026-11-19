@@ -123,7 +123,8 @@
         + '<div class="fiche-nom">' + esc(e.nom) + '</div>'
         + (e.joueurs ? '<div class="fiche-joueurs">' + esc(e.joueurs) + '</div>' : '')
         + '<div class="qr">' + BT.qrSvg(url) + '</div>'
-        + '<div class="fiche-texte">Scanne pour voir ton prochain match, ton terrain, envoyer ton score et suivre le classement.</div></div>';
+        + '<div class="fiche-texte">' + (BT.pointageActif(t) ? 'À ton arrivée, scanne ce QR code et touche « On est arrivés ». Tu suis ensuite tes matchs, ton terrain et le classement, et tu envoies ton score.'
+          : 'Scanne pour voir ton prochain match, ton terrain, envoyer ton score et suivre le classement.') + '</div></div>';
     }).join('') + '</div>';
     el.hidden = false;
     document.body.classList.add('impression-fiches');
@@ -235,7 +236,12 @@
       const fini = () => D.retirerArrivee(id, equipeId).catch(() => {}).then(() => arriveesEnCours.delete(equipeId));
       const e = t.equipes.find((x) => x.id === equipeId);
       if (!e || e.arrivee || !BT.pointageActif(t)) { fini(); return; }
-      agir((tt) => pointerEquipe(tt, equipeId, Number(brut.date) || Date.now())).then(fini);
+      // La table de marque est prévenue de chaque arrivée signalée par un téléphone.
+      let pointee = false;
+      agir((tt) => { pointee = pointerEquipe(tt, equipeId, Number(brut.date) || Date.now()); return pointee; }).then(() => {
+        if (pointee) toast(BT.nomEquipe(t, equipeId) + ' est arrivée, pointée depuis son téléphone.');
+        fini();
+      });
     });
   }
 

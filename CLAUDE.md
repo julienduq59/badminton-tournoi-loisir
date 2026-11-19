@@ -111,6 +111,11 @@ commandes, commits et textes du site.
   l'entrée d'avant est remise en cas d'échec.
 - Écran : 2 rangées de terrains jusqu'à 10, présentation compacte au-delà de 12 ; classement en 2 ou
   3 colonnes avec taille de texte selon le nombre de lignes ; tableau de phase finale réduit pour tenir.
+  Annonce vocale (bouton « Annonce vocale », clé locale `badminton:voix-ecran`, synthèse vocale du
+  navigateur, voix française installée de préférence) : chaque appel est lu après le bip (« Match 12,
+  terrain 3. A contre B. », catégorie lue seulement si le tournoi en mélange plusieurs, nom du tour en
+  phase finale), ainsi que le message de l'organisation et la mise en pause quand ils changent. Le
+  navigateur ne parle qu'après un clic : après un rechargement, « Cliquer pour réactiver la voix ».
 - Cases de score (téléphone et dialogue organisateur) : `type="text"` + `inputmode="numeric"`,
   2 chiffres au plus (`chiffresScore`), case rouge et phrase au-delà de `maxPointsSet(reg)` (points sans
   écart, sinon score maximum), passage à la case suivante après 2 chiffres tapés.
@@ -127,7 +132,8 @@ commandes, commits et textes du site.
   Téléphone : carte « Ton équipe n'est pas encore pointée » et bouton « On est arrivés »
   (`Donnees.signalerArrivee` : en local et sur un appareil organisateur, pointage direct ; sinon dépôt
   dans `arrivees/<équipe>`, que la page de gestion reporte dans le tournoi puis efface,
-  `traiterArrivees`). Table de marque : carte « Arrivée des équipes » (onglet Terrains), « Pointer » /
+  `traiterArrivees`, avec un message à la table de marque). Fiches par équipe : « touche On est
+  arrivés ». Table de marque : carte « Arrivée des équipes » (onglet Terrains), « Pointer » /
   « Annuler » ; onglet Matchs, groupe « En attente de l'arrivée d'une équipe ». Écran : équipes pas
   encore arrivées et QR code « Scanne pour pointer ton équipe ».
 - Photos (`reglages.photos`, actives sauf `false` ; `reglages.photosMax` par personne, 0 = sans limite) :
