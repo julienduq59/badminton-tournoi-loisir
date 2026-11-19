@@ -575,14 +575,14 @@
 
   /* ---------- Classement en direct ---------- */
 
-  function tableClassement(lignes, qualifies) {
+  function tableClassement(lignes, qualifiees) {
     const nuls = BT.nulsPossibles(t);
     return '<div class="tableau-conteneur"><table class="tableau"><thead><tr>'
       + '<th>Rang</th><th class="equipe">Équipe</th><th><abbr title="Matchs joués">J</abbr></th><th><abbr title="Victoires">V</abbr></th>'
       + (nuls ? '<th><abbr title="Matchs nuls">N</abbr></th>' : '')
       + '<th><abbr title="Défaites">D</abbr></th><th><abbr title="Différence de points">Pts</abbr></th></tr></thead><tbody>'
-      + lignes.map((l, i) => '<tr class="' + (l.equipe.id === equipeId ? 'moi' : '') + (i < qualifies ? ' qualifie' : '') + '"><td class="rang">' + l.rang + '</td>'
-        + '<td class="equipe">' + esc(l.equipe.nom) + (i < qualifies ? ' <span class="etiquette etiquette--qualifie">Q</span>' : '') + '</td>'
+      + lignes.map((l) => '<tr class="' + (l.equipe.id === equipeId ? 'moi' : '') + (qualifiees.has(l.equipe.id) ? ' qualifie' : '') + '"><td class="rang">' + l.rang + '</td>'
+        + '<td class="equipe">' + esc(l.equipe.nom) + (qualifiees.has(l.equipe.id) ? ' <span class="etiquette etiquette--qualifie">Q</span>' : '') + '</td>'
         + '<td>' + l.J + '</td><td class="fort">' + l.V + '</td>' + (nuls ? '<td>' + l.N + '</td>' : '') + '<td>' + l.D + '</td>'
         + '<td>' + BT.signe(l.diffPts) + '</td></tr>').join('')
       + '</tbody></table></div>';
@@ -601,10 +601,12 @@
         + '</tbody></table></div>';
     }
     if (t.finale) h += '<h2>Phase finale</h2><div class="tableau-defilant">' + BT.tableauHtml(t, equipeId) + '</div>';
+    // « Q » d'après les équipes vraiment qualifiées : une équipe qui a abandonné ne l'est pas.
+    const qualifiees = new Set(BT.nbQualifies(t) >= 2 ? BT.qualifies(t).map((x) => x.equipe.id) : []);
     if (BT.avecPoules(t)) {
-      BT.listePoules(t).forEach((p) => { h += '<h2>' + p.nom + '</h2>' + tableClassement(BT.classement(t, p.numero), r.qualifiesParPoule || 0); });
+      BT.listePoules(t).forEach((p) => { h += '<h2>' + p.nom + '</h2>' + tableClassement(BT.classement(t, p.numero), qualifiees); });
     } else if (!final || t.finale) {
-      h += (t.finale ? '<h2>Championnat</h2>' : '') + tableClassement(BT.classement(t), Number(r.phaseFinale) || 0);
+      h += (t.finale ? '<h2>Championnat</h2>' : '') + tableClassement(BT.classement(t), qualifiees);
     }
     h += '<p class="note" style="margin-top:12px">Classement au nombre de victoires, puis au match entre les deux équipes à égalité, puis à la différence de sets et de points.'
       + (BT.nbQualifies(t) >= 2 ? ' Q : qualifiée pour la phase finale si le classement reste le même.' : '') + '</p>';

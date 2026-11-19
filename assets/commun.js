@@ -668,8 +668,11 @@
     let min = null;
     const appelables = matchsAppelables(t);
     const reservees = equipesReservees(appelables);
+    // Un match reporté attend la fin d'un autre match ; s'il n'y en a plus en cours, il est appelé
+    // à la fin du repos comme les autres (sinon il ne le serait jamais).
+    const rienEnJeu = !occupees.size;
     appelables.forEach((m) => {
-      if (m.reporte || occupees.has(m.a) || occupees.has(m.b) || bloqueParPriorite(m, reservees)) return;
+      if ((m.reporte && !rienEnJeu) || occupees.has(m.a) || occupees.has(m.b) || bloqueParPriorite(m, reservees)) return;
       const pret = Math.max(fins.get(m.a) || 0, fins.get(m.b) || 0) + R;
       const reste = Math.max(0, pret - maintenant);
       min = min === null ? reste : Math.min(min, reste);
@@ -939,6 +942,7 @@
   // Passe un match en fin de file (équipe absente, erreur d'appel…).
   function reporter(t, m) {
     const etaitEnCours = m.statut === 'en_cours';
+    const lance = demarre(t);
     m.statut = 'attente';
     m.numero = null;
     m.terrain = null;
@@ -948,6 +952,8 @@
     m.reporte = true;
     // Le match reporté n'est pas rappelé tout de suite sur le terrain qu'il libère.
     if (etaitEnCours && appelAutoActif(t)) remplirTerrains(t, new Set([m.a, m.b]), null, new Set([m.id]));
+    // Match en attente reporté (par exemple un match prioritaire) : ses équipes ne sont plus gardées.
+    else if (!etaitEnCours && lance && appelAutoActif(t)) remplirTerrains(t, null, null, new Set([m.id]));
   }
 
   /* ---------- Scores ---------- */
@@ -1020,22 +1026,32 @@
     return alertes;
   }
 
-  function enregistrerScore(t, m, sets) {
+  // forfaitDe : équipe perdante quand le match est réglé par forfait.
+  function enregistrerScore(t, m, sets, forfaitDe) {
     const etaitEnCours = m.statut === 'en_cours';
-    if (pointageActif(t)) {
+    const etaitAppele = m.statut !== 'attente';
+    const lance = demarre(t);
+    // Score saisi sans appel : les deux équipes ont joué, elles sont donc là. Un match appelé les a déjà
+    // pointées, et un forfait ne prouve pas que l'équipe forfait est venue.
+    if (pointageActif(t) && !etaitEnCours && !forfaitDe) {
       pointer(t, m.a, m.debut || Date.now());
       pointer(t, m.b, m.debut || Date.now());
     }
-    numeroter(t, m);
+    // Un match jamais appelé et réglé par forfait ne prend pas de numéro.
+    if (forfaitDe && !etaitAppele) m.numero = null;
+    else numeroter(t, m);
     m.sets = sets;
     m.statut = 'termine';
-    delete m.forfait;
+    if (forfaitDe) m.forfait = forfaitDe;
+    else delete m.forfait;
     delete m.forfaitAbandon;
     delete m.priorite;
     delete m.reporte;
     if (etaitEnCours || !m.fin) m.fin = Date.now();
     if (t.finale) avancerTableau(t);
+    // Terrain libéré, ou équipes libérées (par exemple un match prioritaire réglé sans être joué) : l'appel repart.
     if (etaitEnCours && appelAutoActif(t)) remplirTerrains(t, new Set([m.a, m.b]));
+    else if (!etaitEnCours && lance && appelAutoActif(t)) remplirTerrains(t);
   }
 
   // Score donné par un forfait : l'équipe présente gagne tous les sets nécessaires sans perdre de point.
@@ -1046,17 +1062,14 @@
 
   // Forfait sur un seul match.
   function enregistrerForfait(t, m, perdantId) {
-    const appele = m.statut !== 'attente';
-    enregistrerScore(t, m, setsForfait(formatMatch(t, m), perdantId === m.b));
-    m.forfait = perdantId;
-    if (!appele) m.numero = null; // un match jamais appelé ne prend pas de numéro
+    enregistrerScore(t, m, setsForfait(formatMatch(t, m), perdantId === m.b), perdantId);
   }
 
   // Abandon d'une équipe : tous ses matchs restants sont perdus par forfait.
   function abandonEquipe(t, equipeId) {
     const lance = demarre(t);
     const e = t.equipes.find((x) => x.id === equipeId);
-    if (e) e.abandon = true;
+    if (e) e.abandon = Date.now();
     const liberees = new Set();
     t.matchs.forEach((m) => {
       if (m.statut === 'termine' || (m.a !== equipeId && m.b !== equipeId)) return;
@@ -1074,13 +1087,35 @@
   }
 
   // Annule l'abandon : les matchs perdus par forfait pour cette équipe redeviennent à jouer.
+  // Matchs perdus par forfait à cause de l'abandon de l'équipe. Un forfait posé à la main n'en fait pas
+  // partie ; seuls les très anciens tournois (abandon « true », sans marquage) rouvrent tous ses forfaits.
+  function matchsAbandon(t, equipeId) {
+    const e = t.equipes.find((x) => x.id === equipeId);
+    const marques = t.matchs.some((m) => m.forfaitAbandon && m.forfait === equipeId);
+    const ancien = !marques && !!e && e.abandon === true;
+    return t.matchs.filter((m) => m.statut === 'termine' && m.forfait === equipeId && (m.forfaitAbandon || ancien));
+  }
+
+  // L'abandon ne peut plus être annulé quand la suite du tableau d'un de ses matchs de phase finale a commencé.
+  function abandonAnnulable(t, equipeId) {
+    return !matchsAbandon(t, equipeId).some((m) => suiteCommencee(t, m));
+  }
+
+  // Retourne false si l'annulation est impossible (suite du tableau commencée).
   function annulerAbandon(t, equipeId) {
+    if (!abandonAnnulable(t, equipeId)) return false;
+    const rouvrir = matchsAbandon(t, equipeId);
     const e = t.equipes.find((x) => x.id === equipeId);
     if (e) delete e.abandon;
-    // Seuls les forfaits posés par l'abandon sont annulés (anciens tournois : tous ceux de l'équipe).
-    const marques = t.matchs.some((m) => m.forfaitAbandon && m.forfait === equipeId);
-    t.matchs.forEach((m) => {
-      if (m.statut !== 'termine' || m.forfait !== equipeId || (marques && !m.forfaitAbandon)) return;
+    rouvrir.forEach((m) => {
+      const adversaire = m.a === equipeId ? m.b : m.a;
+      if (equipe(t, adversaire).abandon) {
+        // L'adversaire est toujours parti : le match reste perdu par forfait, à son nom.
+        m.forfait = adversaire;
+        m.sets = setsForfait(formatMatch(t, m), adversaire === m.b);
+        m.forfaitAbandon = true;
+        return;
+      }
       delete m.forfaitAbandon;
       m.statut = 'attente';
       m.sets = [];
@@ -1092,6 +1127,7 @@
     });
     if (t.finale) avancerTableau(t);
     if (demarre(t) && appelAutoActif(t)) remplirTerrains(t);
+    return true;
   }
 
   /* ---------- Classement ---------- */
@@ -1457,6 +1493,8 @@
   // Remet un match terminé dans les matchs à jouer. Retourne false si c'est impossible.
   function effacerResultat(t, m) {
     if (suiteCommencee(t, m)) return false;
+    // Une équipe partie (abandon) ne rejoue pas : il faut d'abord annuler son abandon.
+    if (equipe(t, m.a).abandon || equipe(t, m.b).abandon) return false;
     m.statut = 'attente';
     m.numero = null;
     m.sets = [];
@@ -1563,11 +1601,15 @@
   }
 
   // Podium des trois premières places (ordre d'affichage 2, 1, 3).
+  // Équipes à égalité (par exemple deux 3e sans match pour la 3e place) : sur la même marche.
   function podiumHtml(lignes) {
-    const marche = (l, place) => l ? '<div class="marche marche--' + place + '">'
-      + '<div class="marche-nom">' + esc(l.equipe.nom) + '</div>'
-      + '<div class="marche-bloc">' + l.rang + '</div></div>' : '<div></div>';
-    return '<div class="podium">' + marche(lignes[1], 2) + marche(lignes[0], 1) + marche(lignes[2], 3) + '</div>';
+    const marche = (place) => {
+      const sur = lignes.filter((l) => l.rang === place);
+      return sur.length ? '<div class="marche marche--' + place + '">'
+        + '<div class="marche-nom">' + sur.map((l) => esc(l.equipe.nom)).join('<br>') + '</div>'
+        + '<div class="marche-bloc">' + place + '</div></div>' : '<div></div>';
+    };
+    return '<div class="podium">' + marche(2) + marche(1) + marche(3) + '</div>';
   }
 
   function signe(n) {
@@ -1954,7 +1996,7 @@
     numero, numeroActuel, attenteRepos,
     planifier, dureeMatch, dureeReglee, dureeSelonFormat, finEstimee, dureeEstimee, heureDuJour, texteHeure, lireHeure, heureFinSalle, depassementSalle, prioriser,
     resultat, texteScore, verifierSet, verifierScore, enregistrerScore,
-    setsForfait, enregistrerForfait, abandonEquipe, annulerAbandon, effacerResultat,
+    setsForfait, enregistrerForfait, abandonEquipe, annulerAbandon, abandonAnnulable, effacerResultat,
     nomPoule, avecPoules, listePoules, taillesPoules, verifierPoules, verifierDeroulement, unMatchDePlus, maximumNecessaire,
     nbQualifies, qualifies, phasePoulesFinie, lancerPhaseFinale, annulerPhaseFinale, avancerTableau,
     nbTours, nomTourIndex, matchTableau, participants, issue, tableauTermine, finaleAttendue,
