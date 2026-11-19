@@ -17,6 +17,7 @@
   // Alerte quand le match de l'équipe est appelé (page ouverte).
   const cleAlerte = 'badminton:alerte:' + id;
   let dernierAppel; // match en cours de l'équipe lors de la dernière mise à jour
+  let dernierPreavis = null; // match pour lequel ce téléphone a déjà été prévenu « tu es le prochain »
 
   function alerteVoulue() {
     try { return localStorage.getItem(cleAlerte) === 'oui'; } catch (e) { return false; }
@@ -28,8 +29,8 @@
   function blocAlerte() {
     if (alerteVoulue() && BT.sonActif()) {
       return '<div class="alerte-appel alerte-appel--on"><p>Alerte activée. ' + ('wakeLock' in navigator
-        ? 'Garde cette page ouverte, l’écran reste allumé. Ton téléphone sonne et vibre quand ton match est appelé.'
-        : 'Garde cette page ouverte, écran allumé. Ton téléphone sonne et vibre quand ton match est appelé.') + '</p>'
+        ? 'Garde cette page ouverte, l’écran reste allumé.' : 'Garde cette page ouverte, écran allumé.')
+        + ' Ton téléphone vibre quand ton match devient le prochain appelé, puis sonne et vibre quand il est appelé.</p>'
         + '<button type="button" class="bouton petit" data-action="alerte-off">Désactiver l’alerte</button></div>';
     }
     return '<div class="alerte-appel"><button type="button" class="bouton principal" data-action="alerte-on">Me prévenir quand mon match est appelé</button>'
@@ -50,6 +51,14 @@
     verrouEcran = null;
   }
 
+  // Match de l'équipe qui sera appelé juste après (le premier de l'ordre prévu), s'il ne joue pas déjà.
+  function matchSuivantAppele() {
+    if (!t || !equipeId || BT.statut(t) !== 'en_cours') return null;
+    if (t.matchs.some((x) => x.statut === 'en_cours' && (x.a === equipeId || x.b === equipeId))) return null;
+    const premier = BT.prochains(t)[0];
+    return premier && (premier.a === equipeId || premier.b === equipeId) ? premier : null;
+  }
+
   function verifierAppel() {
     if (!t || !equipeId) return;
     const m = t.matchs.find((x) => x.statut === 'en_cours' && (x.a === equipeId || x.b === equipeId));
@@ -59,6 +68,13 @@
       setTimeout(BT.bip, 1300);
       if (navigator.vibrate) navigator.vibrate([400, 150, 400, 150, 400]);
     }
+    // Préavis : le match de l'équipe devient le prochain appelé (une seule fois par match, plus court que l'appel).
+    const suivant = matchSuivantAppele();
+    if (suivant && suivant.id !== dernierPreavis && dernierAppel !== undefined && alerteVoulue()) {
+      BT.bip();
+      if (navigator.vibrate) navigator.vibrate([250, 120, 250]);
+    }
+    if (suivant) dernierPreavis = suivant.id;
     dernierAppel = actuel;
   }
 
@@ -319,6 +335,12 @@
     if (annonce || t.pause) {
       h += '<div class="annonce-equipe' + (t.pause ? ' annonce-equipe--pause' : '') + '">'
         + esc(annonce || 'Pause, les matchs reprennent bientôt') + '</div>';
+    }
+    // Préavis : le match de l'équipe est le prochain appelé.
+    const suivantAppele = matchSuivantAppele();
+    if (suivantAppele) {
+      h += '<div class="annonce-equipe annonce-equipe--preavis">Prépare-toi, ton match est le prochain appelé'
+        + '<small>Contre ' + nom(adversaire(suivantAppele)) + '. Le numéro du terrain s’affiche dès l’appel.</small></div>';
     }
     // Forfait : l'équipe doit aller voir l'organisation (abandon, ou son dernier match perdu par forfait,
     // tant qu'elle n'est pas de nouveau sur un terrain).

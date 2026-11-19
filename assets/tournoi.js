@@ -322,6 +322,7 @@
     rendreClassement();
     rendreRegles();
     rendrePartager();
+    majPointagesReglages();
     afficherOnglet();
   }
 
@@ -1095,7 +1096,7 @@
       + '</section>'
       + '<section class="r-bloc"><h2>Arrivée des équipes</h2><div class="r-cases">'
       + caseHtml('r-pointage', r.pointage, 'Pointage à l’arrivée : une équipe ne joue qu’une fois pointée. Elle se signale sur son téléphone, ou l’organisation la pointe à la table de marque.')
-      + '</div></section>'
+      + '</div><p class="note r-note" id="r-pointage-aide">Pointe les équipes dans l’onglet Terrains, ou ici dans la liste des équipes, en bas.</p></section>'
       + '<section class="r-bloc"><h2>Scores envoyés par les joueurs</h2><div class="r-cases">'
       + caseHtml('r-joueurs', r.scoresJoueurs, 'Les joueurs peuvent envoyer le score de leur match depuis leur téléphone. Un organisateur le valide ensuite.')
       + caseHtml('r-validation', r.validationAuto, 'Valider tout seul quand les deux équipes envoient le même score')
@@ -1131,17 +1132,38 @@
     majReglages();
   }
 
+  // Pointage dans la liste des équipes des réglages : « Pointer », ou « Pointée à 13:42 » (un clic annule).
+  function boutonPointageReglage(e) {
+    if (!e || e.abandon || !BT.pointageActif(t)) return '';
+    const cle = e.arrivee ? 'p' + e.arrivee : 'n';
+    return e.arrivee
+      ? '<button type="button" class="bouton petit bouton-pointee" data-action="depointer" data-equipe="' + esc(e.id) + '" data-pointage="' + cle + '" title="Annuler le pointage">Pointée à ' + BT.heure(e.arrivee) + '</button>'
+      : '<button type="button" class="bouton petit principal" data-action="pointer" data-equipe="' + esc(e.id) + '" data-pointage="' + cle + '">Pointer</button>';
+  }
+
+  // Mise à jour des boutons de pointage des réglages sans toucher aux noms en cours de saisie.
+  function majPointagesReglages() {
+    document.querySelectorAll('#r-liste-equipes [data-pointage]').forEach((b) => {
+      const e = t.equipes.find((x) => x.id === b.dataset.equipe);
+      const cle = e && !e.abandon && BT.pointageActif(t) ? (e.arrivee ? 'p' + e.arrivee : 'n') : '';
+      if (b.dataset.pointage !== cle) b.outerHTML = boutonPointageReglage(e);
+    });
+  }
+
   function rendreListeEquipes() {
     const avecMatchs = t.matchs.length > 0;
+    const pointage = avecMatchs && BT.pointageActif(t);
     $('#r-liste-equipes').innerHTML = brouillon.equipes.map((e, i) => {
       const actuelle = t.equipes.find((x) => x.id === e.id);
       let action = '';
       if (avecMatchs && actuelle) {
-        action = actuelle.abandon
-          ? '<button type="button" class="bouton petit" data-action="annuler-abandon" data-equipe="' + esc(e.id) + '">Annuler l’abandon</button>'
-          : '<button type="button" class="bouton petit danger" data-action="abandon" data-equipe="' + esc(e.id) + '">Abandon</button>';
+        action = '<div class="ligne-actions">' + (pointage ? boutonPointageReglage(actuelle) : '')
+          + (actuelle.abandon
+            ? '<button type="button" class="bouton petit" data-action="annuler-abandon" data-equipe="' + esc(e.id) + '">Annuler l’abandon</button>'
+            : '<button type="button" class="bouton petit danger" data-action="abandon" data-equipe="' + esc(e.id) + '">Abandon</button>')
+          + '</div>';
       }
-      return '<div class="ligne-equipe' + (avecMatchs ? ' ligne-equipe--action' : '') + (actuelle && actuelle.abandon ? ' ligne-equipe--abandon' : '') + '">'
+      return '<div class="ligne-equipe' + (avecMatchs ? ' ligne-equipe--action' : '') + (pointage ? ' ligne-equipe--pointage' : '') + (actuelle && actuelle.abandon ? ' ligne-equipe--abandon' : '') + '">'
         + '<span class="num">' + (i + 1) + '</span>'
         + '<input type="text" data-index="' + i + '" data-champ="nom" maxlength="40" value="' + esc(e.nom) + '" placeholder="Équipe ' + (i + 1) + '" aria-label="Nom de l’équipe ' + (i + 1) + '">'
         + '<input type="text" class="joueurs" data-index="' + i + '" data-champ="joueurs" maxlength="80" value="' + esc(e.joueurs || '') + '" placeholder="Joueurs (facultatif)" aria-label="Joueurs de l’équipe ' + (i + 1) + '">'
@@ -1289,6 +1311,7 @@
     $('#r-plafond-bloc').hidden = !r.ecart2;
     $('#r-validation-case').hidden = !r.scoresJoueurs;
     $('#r-photos-bloc').hidden = r.photos === false;
+    $('#r-pointage-aide').hidden = !r.pointage;
 
     const total = erreur ? null : compterMatchsPoules(n, r);
     const matchsFinale = Q >= 2 ? Q - 1 + (r.petiteFinale && Q >= 4 ? 1 : 0) : 0;
@@ -1736,7 +1759,10 @@
       case 'pointer': {
         const equipeId = el.dataset.equipe;
         el.disabled = true;
-        agir((tt) => pointerEquipe(tt, equipeId)).then(() => D.retirerArrivee(id, equipeId).catch(() => {}));
+        agir((tt) => pointerEquipe(tt, equipeId)).then(() => {
+          if (el.isConnected) el.disabled = false;
+          return D.retirerArrivee(id, equipeId).catch(() => {});
+        });
         break;
       }
       case 'depointer': {

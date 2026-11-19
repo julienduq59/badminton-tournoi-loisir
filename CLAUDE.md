@@ -97,6 +97,10 @@ commandes, commits et textes du site.
   sur chaque tournoi qu'il crée (`appliquerMotDePasseRetenu` : création, Recommencer, restauration).
 - Sauvegarde : fichier JSON `{ format: 'badminton-tournoi-loisir', version, date, tournoi }`
   (Réglages), restauré depuis l'accueil comme un nouveau tournoi (nouvel identifiant).
+- Préavis sur le téléphone : quand le match de l'équipe est le premier de l'ordre prévu (`prochains(t)[0]`,
+  tournoi en cours, équipe pas sur un terrain), bandeau « Prépare-toi, ton match est le prochain appelé »
+  et, avec l'alerte activée, un bip et une vibration courte, une seule fois par match (`dernierPreavis`) ;
+  puis l'alerte d'appel habituelle (deux bips, vibration longue).
 - Page des équipes : bandeau rouge « va voir l'organisation » quand l'équipe a abandonné ou que son
   dernier match est perdu par forfait (tant qu'elle n'est pas sur un terrain). Pendant la frappe d'un score, les mises à jour en direct attendent que le champ
   soit quitté (`rendreEnDirect`). Avec l'alerte d'appel, l'écran reste allumé (Wake Lock). Sans réseau
@@ -134,7 +138,9 @@ commandes, commits et textes du site.
   dans `arrivees/<équipe>`, que la page de gestion reporte dans le tournoi puis efface,
   `traiterArrivees`, avec un message à la table de marque). Fiches par équipe : « touche On est
   arrivés ». Table de marque : carte « Arrivée des équipes » (onglet Terrains), « Pointer » /
-  « Annuler » ; onglet Matchs, groupe « En attente de l'arrivée d'une équipe ». Écran : équipes pas
+  « Annuler » ; aussi dans la liste des équipes des Réglages, à côté de « Abandon » (« Pointer » ou
+  « Pointée à 13:42 », un clic annule ; boutons mis à jour en direct par `majPointagesReglages` sans
+  toucher aux saisies) ; onglet Matchs, groupe « En attente de l'arrivée d'une équipe ». Écran : équipes pas
   encore arrivées et QR code « Scanne pour pointer ton équipe ».
 - Photos (`reglages.photos`, actives sauf `false` ; `reglages.photosMax` par personne, 0 = sans limite) :
   album du tournoi (onglet « Photos » des téléphones, `#photos`) et photo de chaque équipe (en tête de sa

@@ -894,7 +894,10 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .titre-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 28px 0 12px; }
 .titre-actions h2 { margin: 0; }
 .ligne-equipe--action { grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1.3fr) 150px; }
-.ligne-equipe--action .bouton { justify-self: stretch; }
+.ligne-equipe--pointage { grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1.3fr) 300px; }
+.ligne-actions { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; }
+.ligne-actions .bouton { white-space: nowrap; }
+.bouton-pointee { background: #e3f4ea; color: var(--vert-900); border-color: #b9dfc8; }
 .ligne-equipe--abandon input { text-decoration: line-through; color: var(--encre-douce); }
 #r-equipes-erreur { display: block; margin-bottom: 10px; }
 .score-forfait {
@@ -981,7 +984,7 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 
 @media (max-width: 720px) {
   .ligne-equipe--action { grid-template-columns: 34px minmax(0, 1fr); }
-  .ligne-equipe--action .bouton { grid-column: 2; justify-self: start; }
+  .ligne-actions { grid-column: 2; display: flex; flex-wrap: wrap; justify-self: start; }
   .filtres select { margin-left: 0; width: 100%; }
   .match-etat { max-width: 48vw; }
   .score-forfait span { width: 100%; }
@@ -1075,6 +1078,8 @@ details > summary.bouton::-webkit-details-marker { display: none; }
 .annonce-equipe { margin-bottom: 14px; padding: 12px 16px; border-radius: var(--rayon); background: var(--jaune); color: var(--vert-900); font-weight: 750; }
 .annonce-equipe--pause { background: #fde8e6; color: #7a1d16; }
 .annonce-equipe--forfait { background: var(--rouge); color: #fff; }
+.annonce-equipe--preavis { background: var(--vert-700); color: #fff; border-left: 6px solid var(--jaune); }
+.annonce-equipe--preavis small { display: block; margin-top: 3px; font-weight: 600; opacity: .9; }
 .ecran--annonce { grid-template-rows: auto auto minmax(0, 1fr); }
 .e-annonce {
   grid-column: 1 / -1;
